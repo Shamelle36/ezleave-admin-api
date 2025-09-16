@@ -1,43 +1,98 @@
 import express from "express";
 import { createAnnouncement, getAnnouncements, updateAnnouncement, deleteAnnouncement } from "../controllers/announcementController.js";
 import multer from "multer";
-import path from "path";
+import cloudinary from "../config/cloudinary.js";
+import fs from "fs";
 
 const router = express.Router();
 
-// Configure storage
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, "uploads/"), // store in uploads folder
-  filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname)), // unique filename
-});
+const upload = multer({ dest: "temp/" });
 
-// Multer instance
-const upload = multer({ storage });
+const uploadToCloudinary = async (file, folder, resource_type = "image") => {
+  const result = await cloudinary.uploader.upload(file.path, {
+    folder,
+    resource_type,
+  });
 
-// Get all announcements
+  fs.unlinkSync(file.path);
+
+  return result.secure_url;
+};
+
 router.get("/", getAnnouncements);
 
-// Post new announcement
-// Accepts multiple files under two different fields: "files" and "images"
 router.post(
   "/",
   upload.fields([
-    { name: "files", maxCount: 10 },   // e.g., PDF, DOCX, etc.
-    { name: "images", maxCount: 10 },  // e.g., JPG, PNG, etc.
+    { name: "files", maxCount: 10 },
+    { name: "images", maxCount: 10 },
   ]),
-  createAnnouncement
+  async (req, res, next) => {
+    try {
+      const { title, details, priority, created_by } = req.body;
+
+      let imageUrls = [];
+      let fileUrls = [];
+
+      if (req.files?.images) {
+        for (const img of req.files.images) {
+          const url = await uploadToCloudinary(img, "ezleave/announcements", "image");
+          imageUrls.push(url);
+        }
+      }
+
+      if (req.files?.files) {
+        for (const file of req.files.files) {
+          const url = await uploadToCloudinary(file, "ezleave/files", "raw");
+          fileUrls.push(url);
+        }
+      }
+
+      req.body.images = imageUrls;
+      req.body.files = fileUrls;
+
+      return createAnnouncement(req, res);
+    } catch (err) {
+      next(err);
+    }
+  }
 );
 
-// Update announcement
-// Handle optional files and images
 router.put(
   "/:id",
-  upload.fields([{ name: "files" }, { name: "images" }]),
-  updateAnnouncement
+  upload.fields([
+    { name: "files", maxCount: 10 },
+    { name: "images", maxCount: 10 },
+  ]),
+  async (req, res, next) => {
+    try {
+      let imageUrls = [];
+      let fileUrls = [];
+
+      if (req.files?.images) {
+        for (const img of req.files.images) {
+          const url = await uploadToCloudinary(img, "ezleave/announcements", "image");
+          imageUrls.push(url);
+        }
+      }
+
+      if (req.files?.files) {
+        for (const file of req.files.files) {
+          const url = await uploadToCloudinary(file, "ezleave/files", "raw");
+          fileUrls.push(url);
+        }
+      }
+
+      req.body.images = imageUrls;
+      req.body.files = fileUrls;
+
+      return updateAnnouncement(req, res);
+    } catch (err) {
+      next(err);
+    }
+  }
 );
 
 router.delete("/:id", deleteAnnouncement);
-
-
 
 export default router;
