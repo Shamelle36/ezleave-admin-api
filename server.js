@@ -14,7 +14,7 @@ const app = express();
 app.use(cors({
   origin: [
     "http://localhost:3000",
-    "https://ezleave-admin-api.onrender.com" // Replace with actual deployed frontend
+    "https://ezleave-admin-api.onrender.com"
   ],
   methods: ["GET", "POST", "PUT", "DELETE"],
   credentials: true

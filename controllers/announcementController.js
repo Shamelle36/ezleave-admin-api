@@ -34,13 +34,15 @@ export const createAnnouncement = async (req, res) => {
   try {
     const { title, details, priority, created_by } = req.body;
 
-    // Handle uploads
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+
     const filePaths = req.files?.files
-      ? req.files.files.map((f) => `/uploads/${f.filename}`)
+      ? req.files.files.map((f) => `${baseUrl}/uploads/${f.filename}`)
       : [];
     const imagePaths = req.files?.images
-      ? req.files.images.map((f) => `/uploads/${f.filename}`)
+      ? req.files.images.map((f) => `${baseUrl}/uploads/${f.filename}`)
       : [];
+
 
     const user = await sql`
       SELECT role
@@ -97,9 +99,10 @@ export const updateAnnouncement = async (req, res) => {
     const { id } = req.params;
     const { title, details, priority, created_by } = req.body;
 
-    // Handle uploaded files/images
-    const filePaths = req.files?.files?.map(f => `/uploads/${f.filename}`) || null;
-    const imagePaths = req.files?.images?.map(f => `/uploads/${f.filename}`) || null;
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+
+    const filePaths = req.files?.files?.map(f => `${baseUrl}/uploads/${f.filename}`) || null;
+    const imagePaths = req.files?.images?.map(f => `${baseUrl}/uploads/${f.filename}`) || null;
 
     // Fetch current announcement first (to use existing values if undefined)
     const current = await sql`
