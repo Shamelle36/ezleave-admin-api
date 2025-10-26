@@ -1,7 +1,6 @@
+// backend/config/cloudinary.js
 import { v2 as cloudinary } from "cloudinary";
-import dotenv from "dotenv";
-
-dotenv.config();
+import { CloudinaryStorage } from "multer-storage-cloudinary";
 
 cloudinary.config({
   cloud_name: process.env.CLOUD_NAME,
@@ -9,4 +8,12 @@ cloudinary.config({
   api_secret: process.env.API_SECRET,
 });
 
-export default cloudinary;
+const storage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: "announcements",
+    resource_type: "auto", // supports pdf, docs, images, etc.
+  },
+});
+
+export { cloudinary, storage };

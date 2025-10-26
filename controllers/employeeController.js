@@ -1,10 +1,34 @@
 // controllers/employeeController.js
 import sql from "../config/db.js";
 
-// 📌 Add new employee
 export const addEmployee = async (req, res) => {
   try {
-    const { first_name, last_name, email, position, id_number, contact_number, civil_status, department, status, date_hired, gender } = req.body;
+    let { 
+      first_name, 
+      last_name, 
+      email, 
+      position, 
+      id_number, 
+      contact_number, 
+      civil_status, 
+      department, 
+      status, 
+      date_hired, 
+      gender, 
+      employment_status 
+    } = req.body;
+
+    // Convert empty id_number and email to null
+    id_number = id_number?.trim() || null;
+    email = email?.trim() || null;  // <-- allow multiple employees without email
+
+    // Sanitize date_hired
+    const parsedDate = new Date(date_hired);
+    if (isNaN(parsedDate)) {
+      date_hired = new Date().toISOString().split('T')[0]; // fallback to today
+    } else {
+      date_hired = parsedDate.toISOString().split('T')[0]; // format as YYYY-MM-DD
+    }
 
     const [employee] = await sql`
       INSERT INTO employee_list (
@@ -18,7 +42,8 @@ export const addEmployee = async (req, res) => {
         department, 
         status, 
         date_hired,
-        gender
+        gender,
+        employment_status
       ) VALUES (
         ${first_name}, 
         ${last_name}, 
@@ -30,7 +55,8 @@ export const addEmployee = async (req, res) => {
         ${department}, 
         ${status}, 
         ${date_hired},
-        ${gender}
+        ${gender},
+        ${employment_status}
       )
       RETURNING *
     `;
@@ -42,66 +68,112 @@ export const addEmployee = async (req, res) => {
   }
 };
 
+
 // 📌 Get all employees
 export const getEmployees = async (req, res) => {
   try {
-    const result = await sql`
-      SELECT 
-        id,
-        first_name,
-        last_name,
-        (first_name || ' ' || last_name) AS full_name,
-        email,
-        position,
-        department,
-        employment_status,
-        gender,
-        civil_status,
-        status,
-        date_hired,
-        id_number,
-        contact_number,
-        created_at,
-        updated_at
-      FROM employee_list
-      ORDER BY id DESC;
-    `;
+    const role = req.query.role || "admin";       // default to admin
+    const department = req.query.department || "";
+
+    let result;
+    if (role === "admin") {
+      result = await sql`SELECT * FROM employee_list ORDER BY id DESC;`;
+    } else {
+      result = await sql`
+        SELECT *
+        FROM employee_list
+        WHERE department = ${department}
+        ORDER BY id DESC;
+      `;
+    }
+
     res.json(result);
-  } catch (error) {
-    console.error("Error fetching employees:", error);
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Failed to fetch employees" });
   }
 };
 
 // 📌 Get single employee by ID
+// Reverse map: short code -> full name
+const leaveTypeFullNameMap = {
+  "VL": "Vacation Leave",
+  "ML": "Mandatory/Forced Leave",
+  "SL": "Sick Leave",
+  "MAT": "Maternity Leave",
+  "PAT": "Paternity Leave",
+  "SPL": "Special Privilege Leave",
+  "SOLO": "Solo Parent Leave",
+  "STUDY": "Study Leave",
+  "VAWC": "VAWC Leave",
+  "RL": "Rehabilitation Leave",
+  "SLBW": "Special Leave Benefits for Women",
+  "CALAMITY": "Special Emergency (Calamity) Leave",
+  "MOL": "Monetization of Leave Credits",
+  "TL": "Terminal Leave",
+  "AL": "Adoption Leave",
+};
+
 export const getEmployeeById = async (req, res) => {
   const { id } = req.params;
   try {
+    // 🟢 Get employee details
     const result = await sql`
       SELECT 
-        id,
-        first_name,
-        last_name,
-        (first_name || ' ' || last_name) AS full_name,
-        email,
-        position,
-        department,
-        employment_status,
-        gender,
-        civil_status,
-        status,
-        date_hired,
-        id_number,
-        contact_number,
-        created_at,
-        updated_at
-      FROM employee_list
-      WHERE id = ${id};
+        e.id,
+        e.first_name,
+        e.last_name,
+        (e.first_name || ' ' || e.last_name) AS full_name,
+        e.email,
+        e.position,
+        e.department,
+        e.employment_status,
+        e.gender,
+        e.civil_status,
+        e.status,
+        e.date_hired,
+        e.id_number,
+        e.contact_number,
+        e.profile_picture,
+        e.created_at,
+        e.updated_at
+      FROM employee_list e
+      WHERE e.id = ${id};
     `;
+
     if (result.length === 0) {
       return res.status(404).json({ error: "Employee not found" });
     }
-    res.json(result[0]);
+
+    const employee = result[0];
+
+    // 🟢 Get leave balances
+    let leaveBalances = await sql`
+      SELECT leave_type, total_days, used_days, balance_days AS remaining, year
+      FROM leave_entitlements
+      WHERE user_id = ${employee.id};
+    `;
+
+    // Map short code -> full name
+    leaveBalances = leaveBalances.map(l => ({
+      ...l,
+      leave_type: leaveTypeFullNameMap[l.leave_type] || l.leave_type
+    }));
+
+    // 🟢 Get last 5 attendance logs
+    const attendanceLogs = await sql`
+      SELECT attendance_date, am_checkin, am_checkout, pm_checkin, pm_checkout
+      FROM attendance_logs
+      WHERE pin = ${employee.id_number}
+      ORDER BY attendance_date DESC
+      LIMIT 5;
+    `;
+
+    res.json({
+      ...employee,
+      leaveBalances,
+      attendanceLogs,
+    });
   } catch (error) {
     console.error("Error fetching employee:", error);
     res.status(500).json({ error: "Failed to fetch employee" });
@@ -182,14 +254,28 @@ export const deleteEmployee = async (req, res) => {
 // Count employees
 export async function getEmployeeCount(req, res) {
   try {
-    const [result] = await sql`
-      SELECT COUNT(*)::int AS total FROM employee_list
-    `;
+    const role = req.query.role || "admin";       // frontend should send role
+    const department = req.query.department || "";
+
+    let result;
+    if (role === "admin") {
+      [result] = await sql`
+        SELECT COUNT(*)::int AS total FROM employee_list
+      `;
+    } else {
+      [result] = await sql`
+        SELECT COUNT(*)::int AS total
+        FROM employee_list
+        WHERE department = ${department}
+      `;
+    }
+
     res.status(200).json({ total: result.total });
   } catch (error) {
     console.error("Error fetching employee count:", error);
     res.status(500).json({ message: "Internal server error" });
   }
 }
+
 
 
