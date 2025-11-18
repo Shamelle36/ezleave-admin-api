@@ -72,13 +72,16 @@ export const addEmployee = async (req, res) => {
 // 📌 Get all employees
 export const getEmployees = async (req, res) => {
   try {
-    const role = req.query.role || "admin";       // default to admin
+    const role = req.query.role || "admin";
     const department = req.query.department || "";
 
     let result;
-    if (role === "admin") {
+    
+    if (role === "admin" || role === "mayor") {
+      // Both admin and mayor can see all employees
       result = await sql`SELECT * FROM employee_list ORDER BY id DESC;`;
     } else {
+      // Office heads can only see their department employees
       result = await sql`
         SELECT *
         FROM employee_list
@@ -93,6 +96,7 @@ export const getEmployees = async (req, res) => {
     res.status(500).json({ error: "Failed to fetch employees" });
   }
 };
+
 
 // 📌 Get single employee by ID
 // Reverse map: short code -> full name
@@ -254,11 +258,11 @@ export const deleteEmployee = async (req, res) => {
 // Count employees
 export async function getEmployeeCount(req, res) {
   try {
-    const role = req.query.role || "admin";       // frontend should send role
+    const role = req.query.role || "admin";
     const department = req.query.department || "";
 
     let result;
-    if (role === "admin") {
+    if (role === "admin" || role === "mayor") {
       [result] = await sql`
         SELECT COUNT(*)::int AS total FROM employee_list
       `;
@@ -276,6 +280,5 @@ export async function getEmployeeCount(req, res) {
     res.status(500).json({ message: "Internal server error" });
   }
 }
-
 
 

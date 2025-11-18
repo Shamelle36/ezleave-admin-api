@@ -21,13 +21,16 @@
     "dotenv": "^17.2.2",
     "exceljs": "^4.4.0",
     "express": "^5.1.0",
+    "googleapis": "^165.0.0",
+    "image-size": "^2.0.2",
     "jsonwebtoken": "^9.0.2",
+    "libreoffice-convert": "^1.7.0",
     "multer": "^2.0.2",
     "multer-storage-cloudinary": "^4.0.0",
     "nodemailer": "^7.0.9",
     "pdfkit": "^0.17.2",
     "postgres": "^3.4.7",
-    "puppeteer": "^24.25.0",
+    "puppeteer": "^24.30.0",
     "xlsx-populate": "^1.21.0"
   },
   "devDependencies": {
