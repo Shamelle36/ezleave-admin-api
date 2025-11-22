@@ -361,6 +361,8 @@ export const generateCSForm = async (req, res) => {
           font-weight: normal;
         }
 
+        
+
       </style>
     </head>
 
@@ -532,7 +534,7 @@ export const generateCSForm = async (req, res) => {
 
               <div style="font-size: 13px; margin-bottom: 10px" class="italic mb-4 mt-8">In case of Sick Leave:</div>
               <div style="margin-bottom: 10px;">
-                <div style:"font-size: 13px" class="leave-item">
+                <div style="font-size: 13px" class="leave-item">
                   <span class="checkbox">${hospitalIllness ? "X" : ""}</span>
                   In Hospital (Specify Illness) 
                   <span class="full-width-underline">${hospitalIllness}</span>
@@ -635,21 +637,17 @@ export const generateCSForm = async (req, res) => {
               </td>
 
             <td style="vertical-align:top; padding:8px; border-top: none">
-              <!-- UPDATED: Use effective action data for real-time updates -->
               <div class="leave-item">
                 <span class="checkbox">${currentActionType === "approve" ? "X" : ""}</span> For approval 
               </div>
-              <div class="leave-item">
-                <span class="checkbox">${currentActionType === "reject" ? "X" : ""}</span> For disapproval due to 
-                <div style="flex: 1; border-bottom: 1px solid #000; padding: 0 5px; min-height: 16px; display: flex; align-items: center;">
-                  ${currentActionType === "reject" ? effectiveActionRemarks : ""}
+              <div class="leave-item" style="align-items: flex-start;">
+                <span class="checkbox">${currentActionType === "reject" ? "X" : ""}</span> 
+                <div style="flex: 1; margin-left: 5px;">
+                  For disapproval due to
+                  <div class="continuous-underline" style="margin-top: 2px; text-align:justify;">
+                    ${currentActionType === "reject" ? effectiveActionRemarks : "&nbsp;"}
+                  </div>
                 </div>
-              </div>
-
-              <div style="display: flex; flex-direction: column; margin-top: 10px;">
-                <div class="double-underline"></div>
-                <div class="double-underline"></div>
-                <div class="double-underline"></div>
               </div>
 
               <div class="single-sign" style="text-align:center; margin-top:25px;">
