@@ -5,6 +5,7 @@ import sql from "../config/db.js";
 
 export const generateCSForm = async (req, res) => {
   let browser;
+
   try {
     const { 
       leave_application_id, 
@@ -12,7 +13,11 @@ export const generateCSForm = async (req, res) => {
       requesting_role, 
       action_type, 
       action_remarks,
-      real_time_data 
+      real_time_data,
+      user_id,
+      user_data,
+      signature_data,
+      signature_method
     } = req.body;
 
     if (!leave_application_id) {
@@ -31,7 +36,9 @@ export const generateCSForm = async (req, res) => {
     console.log("Using form data:", {
       effectiveActionType,
       effectiveActionRemarks, 
-      effectiveDaysWithPay
+      effectiveDaysWithPay,
+      signature_method,
+      has_signature: !!signature_data
     });
 
     const [leaveApplication] = await sql`
@@ -50,15 +57,19 @@ export const generateCSForm = async (req, res) => {
         lr.office_head_status,
         lr.hr_status,
         lr.mayor_status,
+        lr.office_head_signature,
+        lr.hr_signature,
+        lr.mayor_signature,
+        lr.subtype,
         
         -- Get earned values for current year
         (SELECT period FROM leave_cards WHERE employee_id = el.id AND period LIKE '%2025%' ORDER BY id DESC LIMIT 1) as period,
-        (SELECT vl_balance::numeric FROM leave_cards WHERE employee_id = el.id AND period LIKE '%2025%' ORDER BY id DESC LIMIT 1) as vacation_leave_earned,
-        (SELECT sl_balance::numeric FROM leave_cards WHERE employee_id = el.id AND period LIKE '%2025%' ORDER BY id DESC LIMIT 1) as sick_leave_earned,
+        (SELECT CAST(vl_balance AS NUMERIC) FROM leave_cards WHERE employee_id = el.id AND period LIKE '%2025%' ORDER BY id DESC LIMIT 1) as vacation_leave_earned,
+        (SELECT CAST(sl_balance AS NUMERIC) FROM leave_cards WHERE employee_id = el.id AND period LIKE '%2025%' ORDER BY id DESC LIMIT 1) as sick_leave_earned,
         
         -- Get the latest balance values
-        (SELECT vl_balance::numeric FROM leave_cards WHERE employee_id = el.id ORDER BY id DESC LIMIT 1) as vacation_leave_balance,
-        (SELECT sl_balance::numeric FROM leave_cards WHERE employee_id = el.id ORDER BY id DESC LIMIT 1) as sick_leave_balance
+        (SELECT CAST(vl_balance AS NUMERIC) FROM leave_cards WHERE employee_id = el.id ORDER BY id DESC LIMIT 1) as vacation_leave_balance,
+        (SELECT CAST(sl_balance AS NUMERIC) FROM leave_cards WHERE employee_id = el.id ORDER BY id DESC LIMIT 1) as sick_leave_balance
         
       FROM leave_applications lr
       LEFT JOIN employee_list el ON lr.user_id = el.user_id
@@ -93,6 +104,9 @@ export const generateCSForm = async (req, res) => {
       office_head_status = "",
       hr_status = "",
       mayor_status = "",
+      office_head_signature = "",
+      hr_signature = "",
+      mayor_signature = "",
       period = "",
       vacation_leave_earned = "",
       sick_leave_earned = "",
@@ -111,7 +125,6 @@ export const generateCSForm = async (req, res) => {
       if (!periodString || !showLeaveCredits) return '';
       
       try {
-        // Handle different period formats
         if (/^[A-Za-z]+\s+\d{4}$/.test(periodString)) {
           return periodString;
         }
@@ -166,14 +179,127 @@ export const generateCSForm = async (req, res) => {
     const displayVacationEarned = showLeaveCredits ? (vacation_leave_earned || '0') : '';
     const displaySickEarned = showLeaveCredits ? (sick_leave_earned || '0') : '';
 
-    // Determine signature section based on role
-    let signatureSection = "";
+    // Determine signature section based on role - for the final approval section
+    let finalSignatureSection = "Municipal Mayor";
+
+    let approverFullName = "";
+    let mayorFullName = "";
+    let departmentHeadFullName = "";
+    let approverRow;
+
+    let displaySignature = "";
+    if (signature_method === "e-sign" && signature_data) {
+      displaySignature = signature_data;
+    } else {
+      if (requesting_role === "office_head") {
+        displaySignature = office_head_signature;
+      } else if (requesting_role === "admin") {
+        displaySignature = hr_signature;
+      } else if (requesting_role === "mayor") {
+        displaySignature = mayor_signature;
+      }
+    }
+
+    // ADD SEPARATE VARIABLES FOR EACH ROLE'S SIGNATURE
+    const officeHeadSignature = office_head_signature;
+    const hrSignature = hr_signature;
+    const mayorSignature = mayor_signature;
+
+    const userId = user_id;
+
+    if (!userId) {
+      return res.status(401).json({
+        message: "User ID is required in request"
+      });
+    }
+
+    console.log("Using user ID:", userId, "for role:", requesting_role);
+
+    // Get mayor's name regardless of current user role
+    try {
+        const [mayorRow] = await sql`
+            SELECT full_name
+            FROM admin_accounts
+            WHERE role = 'mayor'
+            LIMIT 1
+        `;
+        mayorFullName = mayorRow?.full_name || "";
+    } catch (error) {
+        console.error("Error fetching mayor:", error);
+    }
+
+    // Get department head's name for the employee's department
+    try {
+        const [deptHeadRow] = await sql`
+            SELECT aa.full_name
+            FROM admin_accounts aa
+            WHERE aa.role = 'office_head' 
+            AND aa.department = ${department}
+            LIMIT 1
+        `;
+        departmentHeadFullName = deptHeadRow?.full_name || "";
+    } catch (error) {
+        console.error("Error fetching department head:", error);
+    }
+
     if (requesting_role === "office_head") {
-        signatureSection = "Department Head";
-    } else if (requesting_role === "admin") {
-        signatureSection = "HR Department";
-    } else if (requesting_role === "mayor") {
-        signatureSection = "Municipal Mayor";
+      [approverRow] = await sql`
+        SELECT full_name
+        FROM admin_accounts
+        WHERE id = ${userId} AND role = 'office_head'
+      `;
+      approverFullName = approverRow?.full_name || "";
+    }
+    else if (requesting_role === "admin") {
+      [approverRow] = await sql`
+        SELECT full_name
+        FROM useradmin
+        WHERE id = ${userId}
+      `;
+      approverFullName = approverRow?.full_name || "";
+    }
+    else if (requesting_role === "mayor") {
+      [approverRow] = await sql`
+        SELECT full_name
+        FROM admin_accounts
+        WHERE id = ${userId} AND role = 'mayor'
+      `;
+      approverFullName = approverRow?.full_name || "";
+    }
+
+    console.log("✅ Final approverFullName:", approverFullName);
+    console.log("✅ Mayor's name:", mayorFullName);
+
+    let displayMayorName = "";
+    if (requesting_role === "mayor") {
+        displayMayorName = mayorFullName;  
+    }
+
+    console.log("✅ Department Head's name:", departmentHeadFullName);
+
+    let hrApproverFullName = "";
+    if (requesting_role === "admin") {
+        hrApproverFullName = approverFullName;
+    } else {
+        try {
+            const [hrRow] = await sql`
+                SELECT full_name 
+                FROM useradmin 
+                WHERE role = 'admin' 
+                LIMIT 1
+            `;
+            hrApproverFullName = hrRow?.full_name || "HR Department";
+        } catch (error) {
+            console.error("Error fetching HR admin:", error);
+            hrApproverFullName = "HR Department";
+        }
+    }
+
+    let recommendationSignatureSection = "Department Head";
+    
+    let recommendationName = departmentHeadFullName;
+    if (requesting_role === "office_head") {
+        recommendationName = approverFullName || departmentHeadFullName;
     }
 
     let logoBase64 = '';
@@ -185,20 +311,16 @@ export const generateCSForm = async (req, res) => {
       console.warn('Logo file not found, using placeholder');
     }
 
-    // Format date filing
     const formattedDateFiling = date_filing ? new Date(date_filing).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',
       day: 'numeric'
     }) : '';
 
-    // Parse inclusive dates
     let formattedInclusiveDates = '';
     if (inclusive_dates) {
       try {
-        // Handle both string format and date range format
         if (inclusive_dates.includes('[') && inclusive_dates.includes(',')) {
-          // Format: "[2024-01-01,2024-01-05)"
           const match = inclusive_dates.match(/\[(.*?),(.*?)[)\]]/);
           if (match) {
             const startDate = new Date(match[1]);
@@ -214,7 +336,6 @@ export const generateCSForm = async (req, res) => {
             })}`;
           }
         } else {
-          // Assume it's already a formatted string
           formattedInclusiveDates = inclusive_dates;
         }
       } catch (error) {
@@ -223,32 +344,42 @@ export const generateCSForm = async (req, res) => {
       }
     }
 
-    // Determine commutation status
     const commutationStatus = commutation_requested ? "Requested" : "Not Requested";
 
-    // Determine leave location based on details or leave type
     let leaveLocation = "";
-    if (details && details.toLowerCase().includes('abroad')) {
+    if (leaveApplication.subtype === "Abroad") {
       leaveLocation = "abroad";
-    } else if (details && (details.toLowerCase().includes('within') || details.toLowerCase().includes('philippines'))) {
+    } else if (leaveApplication.subtype === "Philippines") {
       leaveLocation = "within";
     }
 
-    // Determine illness type based on details
     let hospitalIllness = "";
     let outpatientIllness = "";
     let womenLeaveIllness = "";
-    
-    if (details) {
-      if (details.toLowerCase().includes('hospital')) {
-        hospitalIllness = details;
-      } else if (details.toLowerCase().includes('outpatient') || details.toLowerCase().includes('clinic')) {
-        outpatientIllness = details;
+
+    if (leaveApplication.subtype) {
+      if (leaveApplication.subtype === "Hospital") {
+        hospitalIllness = details || "";
+      } else if (leaveApplication.subtype === "Outpatient") {
+        outpatientIllness = details || "";
       } else if (leave_type === "Special Leave Benefits for Women") {
-        womenLeaveIllness = details;
+        womenLeaveIllness = details || "";
       }
     }
 
+
+    console.log("=== SIGNATURE DEBUG INFO ===");
+    console.log("Requesting role:", requesting_role);
+    console.log("Signature method:", signature_method);
+    console.log("Signature data present:", !!signature_data);
+    console.log("Saved signature present:", !!displaySignature);
+    console.log("Approver full name:", approverFullName);
+    console.log("Recommendation name:", recommendationName);
+    console.log("HR approver name:", hrApproverFullName);
+    console.log("Mayor display name:", displayMayorName);
+    console.log("=== END DEBUG INFO ===");    
+
+    // FIXED: Updated HTML with compact signature sections
     const htmlContent = `
     <!doctype html>
     <html>
@@ -300,7 +431,7 @@ export const generateCSForm = async (req, res) => {
         .double-underline + .double-underline { margin-top: 8px; }
         
         .signature { text-align:center; font-size:10px; }
-        .single-sign { text-align:center; margin-top:25px; }
+        .single-sign { text-align:center; margin-top:15px; } /* Reduced from 25px to 15px */
         
         .two-col { display:flex; gap:10px; margin-top:8px; }
         .two-col .col { flex:1; }
@@ -320,9 +451,9 @@ export const generateCSForm = async (req, res) => {
           display: flex;
           align-items: center;
           justify-content: center;
-          margin-bottom: 20px;
+          margin-bottom: 15px; /* Reduced from 20px */
           position: relative;
-          margin-top: 20px;
+          margin-top: 15px; /* Reduced from 20px */
         }
         .logo {
           width: 80px;
@@ -361,7 +492,42 @@ export const generateCSForm = async (req, res) => {
           font-weight: normal;
         }
 
+        .signature-container {
+          text-align: center;
+          margin-top: 5px; /* Reduced from 10px */
+        }
         
+        .signature-image {
+          max-width: 120px; /* Reduced from 180px */
+          max-height: 40px; /* Reduced from 60px */
+          object-fit: contain;
+        }
+
+        /* Compact signature layout */
+        .compact-signature {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          margin-top: 5px; /* Reduced spacing */
+        }
+        
+        .compact-signature-name {
+          text-align: center;
+          margin-top: 2px; /* Reduced from 3px */
+          font-size: 11px; /* Reduced from 12px */
+        }
+        
+        .compact-signature-underline {
+          width: 150px; /* Reduced from 200px */
+          border-bottom: 1px solid #000;
+          margin-top: 1px; /* Reduced from 2px */
+        }
+        
+        .compact-signature-title {
+          font-size: 11px; /* Reduced from 12px */
+          margin-top: 1px; /* Reduced from 3px */
+          text-align: center;
+        }
 
       </style>
     </head>
@@ -370,7 +536,7 @@ export const generateCSForm = async (req, res) => {
 
       <div class="container">
 
-      <header style="text-align: left; margin-bottom: 20px;">
+      <header style="text-align: left; margin-bottom: 15px;"> <!-- Reduced margin -->
         <p style="font-size: 12px; font-style: italic; font-weight: bold; margin: 0;">
             Civil Service Form No. 6
         </p>
@@ -406,14 +572,14 @@ export const generateCSForm = async (req, res) => {
             <td style="border-left: none; text-align:center; border-bottom: none; font-size: 13px">(Middle)</td>
           </tr>
           <tr>
-            <td style="height: 30px;border-right:none; border-top: none; font-size: 13px;">${department}</td>
-            <td style="height: 30px;border-left:none; border-right:none; border-top: none; font-size: 13px"></td>
-            <td style="height: 30px;border-left:none; border-right:none; text-align:center; border-top: none; font-size: 13px">${last_name}</td>
-            <td style="height: 30px;border-left:none; border-right:none; text-align:center; border-top: none; font-size: 13px">${first_name}</td>
-            <td style="height: 30px;border-left:none; text-align:center; border-top: none; font-size: 13px">${middle_name}</td>
+            <td style="height: 25px;border-right:none; border-top: none; font-size: 13px;">${department}</td> <!-- Reduced height -->
+            <td style="height: 25px;border-left:none; border-right:none; border-top: none; font-size: 13px"></td> <!-- Reduced height -->
+            <td style="height: 25px;border-left:none; border-right:none; text-align:center; border-top: none; font-size: 13px">${last_name}</td> <!-- Reduced height -->
+            <td style="height: 25px;border-left:none; border-right:none; text-align:center; border-top: none; font-size: 13px">${first_name}</td> <!-- Reduced height -->
+            <td style="height: 25px;border-left:none; text-align:center; border-top: none; font-size: 13px">${middle_name}</td> <!-- Reduced height -->
           </tr>
           <tr>
-            <td colspan="6" style="height: 20px; border-bottom: none;"></td>
+            <td colspan="6" style="height: 15px; border-bottom: none;"></td> <!-- Reduced height -->
           </tr>
           <tr>
             <td style="border-right: none; border-top: none; border-bottom: none; font-size: 13px">
@@ -446,7 +612,7 @@ export const generateCSForm = async (req, res) => {
           </tr>
 
           <tr>
-            <td style="vertical-align:top; border-top: none; padding: 10px;">
+            <td style="vertical-align:top; border-top: none; padding: 8px;"> <!-- Reduced padding -->
               <!-- LEAVE TYPES -->
                 <div class="leave-item">
                 <span class="checkbox">${leave_type === "Vacation Leave" ? "X" : ""}</span> 
@@ -513,34 +679,34 @@ export const generateCSForm = async (req, res) => {
                 Adoption Leave <span class="note">(R.A. No. 8552)</span>
                 </div>
 
-            <div style="margin-top: 30px;">
+            <div style="margin-top: 20px;"> <!-- Reduced from 30px -->
               <div class="italic" style="font-size: 13px">Others:</div>
-              <div class="underline-below" style="margin-top: 20px; margin-bottom: 20px"></div>
+              <div class="underline-below" style="margin-top: 15px; margin-bottom: 15px;"></div> <!-- Reduced margins -->
             </div>
 
             </td>
 
-            <td style="vertical-align:top; border-top: none; padding: 10px;">
+            <td style="vertical-align:top; border-top: none; padding: 8px;"> <!-- Reduced padding -->
               <!-- LEAVE DETAILS -->
-              <div style="font-size: 13px; margin-bottom: 10px" class="italic mb-4">In case of Vacation/Special Privilege Leave:</div>
-              <div style="font-size: 13px; margin-bottom: 10px" class="leave-item">
+              <div style="font-size: 13px; margin-bottom: 8px" class="italic mb-4">In case of Vacation/Special Privilege Leave:</div> <!-- Reduced margin -->
+              <div style="font-size: 13px; margin-bottom: 8px" class="leave-item"> <!-- Reduced margin -->
                 <span class="checkbox">${leaveLocation === "within" ? "X" : ""}</span> Within the Philippines 
-                <span class="full-width-underline">${leaveLocation === "within" ? details : ""}</span>
+                <span class="full-width-underline"></span>
               </div>
-              <div class="leave-item" style="font-size: 13px; margin-bottom: 10px">
+              <div class="leave-item" style="font-size: 13px; margin-bottom: 8px"> <!-- Reduced margin -->
                 <span class="checkbox">${leaveLocation === "abroad" ? "X" : ""}</span> Abroad (Specify) 
                 <span class="full-width-underline">${leaveLocation === "abroad" ? details : ""}</span>
               </div>
 
-              <div style="font-size: 13px; margin-bottom: 10px" class="italic mb-4 mt-8">In case of Sick Leave:</div>
-              <div style="margin-bottom: 10px;">
+              <div style="font-size: 13px; margin-bottom: 8px" class="italic mb-4 mt-8">In case of Sick Leave:</div> <!-- Reduced margin -->
+              <div style="margin-bottom: 8px;"> <!-- Reduced margin -->
                 <div style="font-size: 13px" class="leave-item">
                   <span class="checkbox">${hospitalIllness ? "X" : ""}</span>
                   In Hospital (Specify Illness) 
                   <span class="full-width-underline">${hospitalIllness}</span>
                 </div>
               </div>
-              <div style="margin-bottom: 10px;">
+              <div style="margin-bottom: 8px;"> <!-- Reduced margin -->
                 <div style="font-size: 13px" class="leave-item">
                   <span class="checkbox">${outpatientIllness ? "X" : ""}</span>
                   Out Patient (Specify Illness) 
@@ -548,22 +714,22 @@ export const generateCSForm = async (req, res) => {
                 </div>
               </div>
 
-              <div style="font-size: 13px; margin-bottom: 10px" class="italic mb-4 mt-8">In case of Special Leave Benefits for Women:</div>
-              <div style="margin-bottom: 10px;">
+              <div style="font-size: 13px; margin-bottom: 8px" class="italic mb-4 mt-8">In case of Special Leave Benefits for Women:</div> <!-- Reduced margin -->
+              <div style="margin-bottom: 8px;"> <!-- Reduced margin -->
                 <div class="leave-item">
                   (Specify Illness) 
                   <span class="full-width-underline">${womenLeaveIllness}</span>
                 </div>
-                <div style="margin-top: 10px" class="double-underline"></div>
+                <div style="margin-top: 8px" class="double-underline"></div> <!-- Reduced margin -->
               </div>
 
-              <div style="font-size: 13px; margin-bottom: 10px" class="italic mb-4 mt-8">In case of Study Leave:</div>
-              <div class="leave-item" style="font-size: 13px; margin-bottom: 10px"><span class="checkbox"></span> Completion of Master's Degree</div>
-              <div class="leave-item" style="font-size: 13px; margin-bottom: 10px"><span class="checkbox"></span> BAR/Board Examination Review</div>
+              <div style="font-size: 13px; margin-bottom: 8px" class="italic mb-4 mt-8">In case of Study Leave:</div> <!-- Reduced margin -->
+              <div class="leave-item" style="font-size: 13px; margin-bottom: 8px"><span class="checkbox"></span> Completion of Master's Degree</div> <!-- Reduced margin -->
+              <div class="leave-item" style="font-size: 13px; margin-bottom: 8px"><span class="checkbox"></span> BAR/Board Examination Review</div> <!-- Reduced margin -->
 
-              <div style="font-size: 13px; margin-bottom: 10px" class="italic mb-4 mt-8">Other purpose:</div>
-              <div class="leave-item" style="font-size: 13px; margin-bottom: 10px"><span class="checkbox"></span> Monetization of Leave Credits</div>
-              <div class="leave-item" style="font-size: 13px; margin-bottom: 10px"><span class="checkbox"></span> Terminal Leave</div>
+              <div style="font-size: 13px; margin-bottom: 8px" class="italic mb-4 mt-8">Other purpose:</div> <!-- Reduced margin -->
+              <div class="leave-item" style="font-size: 13px; margin-bottom: 8px"><span class="checkbox"></span> Monetization of Leave Credits</div> <!-- Reduced margin -->
+              <div class="leave-item" style="font-size: 13px; margin-bottom: 8px"><span class="checkbox"></span> Terminal Leave</div> <!-- Reduced margin -->
 
             </td>
           </tr>
@@ -574,16 +740,16 @@ export const generateCSForm = async (req, res) => {
           </tr>
 
           <tr>
-            <td style="padding: 10px 10px 20px 10px; border-top: none;">
+            <td style="padding: 8px 8px 15px 8px; border-top: none;"> <!-- Reduced padding -->
               <span class="filled-data">${number_of_days}</span>
-              <p style="font-size: 13px; margin-bottom: 30px">INCLUSIVE DATES</p>
+              <p style="font-size: 13px; margin-bottom: 20px">INCLUSIVE DATES</p> <!-- Reduced margin -->
               <span class="filled-data">${formattedInclusiveDates}</span>
             </td>
 
-            <td style="padding:8px; border-top: none;">
+            <td style="padding:6px; border-top: none;"> <!-- Reduced padding -->
               <div style="margin-bottom: 5px; font-size: 13px"><span class="checkbox">${commutationStatus === "Not Requested" ? "X" : ""}</span> Not Requested</div>
               <div style="font-size: 13px"><span class="checkbox">${commutationStatus === "Requested" ? "X" : ""}</span> Requested</div>
-              <div class="full-width-underline" style="margin-top: 20px;"></div>
+              <div class="full-width-underline" style="margin-top: 15px;"></div> <!-- Reduced margin -->
               <div style="font-size: 13px" class="signature">(Signature of Applicant)</div>
             </td>
           </tr>
@@ -605,9 +771,9 @@ export const generateCSForm = async (req, res) => {
           </tr>
 
           <tr>
-             <td style="vertical-align:top; border-top: none; padding: 10px 20px; text-align: center; font-size: 13px">
+             <td style="vertical-align:top; border-top: none; padding: 8px 15px; text-align: center; font-size: 13px"> <!-- Reduced padding -->
                 ${showLeaveCredits ? `As of <span class="period-data">${formattedPeriod}</span>` : '<br>'}
-                <table style="width:100%; border-collapse:collapse; margin-top:8px;">
+                <table style="width:100%; border-collapse:collapse; margin-top:6px;"> <!-- Reduced margin -->
                   <tr>
                     <td style="width:40%;"></td>
                     <td style="width:30%; text-align:center; font-weight:bold; font-size: 13px">Vacation Leave</td>
@@ -630,13 +796,43 @@ export const generateCSForm = async (req, res) => {
                   </tr>
                 </table>
                   
-                <div class="single-sign" style="text-align:center; margin-top:25px;">
-                  <div class="full-width-underline"></div>
-                  ${showLeaveCredits ? 'Administrative Office IV' : 'Pending HR Approval'}
-                </div>            
+                <div class="single-sign" style="text-align:center; margin-top:15px;"> <!-- Reduced margin -->
+                  ${hrSignature ? `
+                    <div class="compact-signature">
+                      <!-- Signature Image -->
+                      <img 
+                        src="data:image/png;base64,${hrSignature.replace(/^data:image\/(png|jpeg|jpg);base64,/, "")}" 
+                        class="signature-image"
+                      />
+                      <!-- Name BELOW e-sign -->
+                      <div class="compact-signature-name">${hrApproverFullName}</div>
+                      <!-- Underline BELOW name (still present) -->
+                      <div class="compact-signature-underline"></div>
+                      <!-- Title BELOW underline -->
+                      <div class="compact-signature-title">Administrative Office IV</div>
+                    </div>
+                  ` : (requesting_role === "admin" && displaySignature) ? `
+                    <div class="compact-signature">
+                      <!-- Signature Image -->
+                      <img 
+                        src="data:image/png;base64,${displaySignature.replace(/^data:image\/(png|jpeg|jpg);base64,/, "")}" 
+                        class="signature-image"
+                      />
+                      <!-- Name BELOW e-sign -->
+                      <div class="compact-signature-name">${hrApproverFullName}</div>
+                      <!-- Underline BELOW name (still present) -->
+                      <div class="compact-signature-underline"></div>
+                      <!-- Title BELOW underline -->
+                      <div class="compact-signature-title">Administrative Office IV</div>
+                    </div>
+                  ` : `
+                    <div class="full-width-underline">${hrApproverFullName}</div>
+                    Administrative Office IV
+                  `}
+                </div>         
               </td>
 
-            <td style="vertical-align:top; padding:8px; border-top: none">
+            <td style="vertical-align:top; padding:6px; border-top: none"> <!-- Reduced padding -->
               <div class="leave-item">
                 <span class="checkbox">${currentActionType === "approve" ? "X" : ""}</span> For approval 
               </div>
@@ -650,11 +846,41 @@ export const generateCSForm = async (req, res) => {
                 </div>
               </div>
 
-              <div class="single-sign" style="text-align:center; margin-top:25px;">
-                  <div class="full-width-underline"></div>
-                  ${signatureSection}
-              </div>
-            </td>
+              <div class="single-sign" style="text-align:center; margin-top:15px;"> <!-- Reduced margin -->
+                ${officeHeadSignature ? `
+                    <div class="compact-signature">
+                        <!-- Signature Image -->
+                        <img 
+                          src="data:image/png;base64,${officeHeadSignature.replace(/^data:image\/(png|jpeg|jpg);base64,/, "")}" 
+                          class="signature-image"
+                        />
+                        <!-- Name BELOW e-sign -->
+                        <div class="compact-signature-name">${recommendationName}</div>
+                        <!-- Underline BELOW name (still present) -->
+                        <div class="compact-signature-underline"></div>
+                        <!-- Title BELOW underline -->
+                        <div class="compact-signature-title">${recommendationSignatureSection}</div>
+                    </div>
+                ` : (requesting_role === "office_head" && displaySignature) ? `
+                    <div class="compact-signature">
+                        <!-- Signature Image -->
+                        <img 
+                          src="data:image/png;base64,${displaySignature.replace(/^data:image\/(png|jpeg|jpg);base64,/, "")}" 
+                          class="signature-image"
+                        />
+                        <!-- Name BELOW e-sign -->
+                        <div class="compact-signature-name">${recommendationName}</div>
+                        <!-- Underline BELOW name (still present) -->
+                        <div class="compact-signature-underline"></div>
+                        <!-- Title BELOW underline -->
+                        <div class="compact-signature-title">${recommendationSignatureSection}</div>
+                    </div>
+                ` : `
+                    <div class="full-width-underline">${recommendationName}</div>
+                    ${recommendationSignatureSection}
+                `}
+              </div>            
+              </td>
           </tr>
 
             <tr>
@@ -667,8 +893,8 @@ export const generateCSForm = async (req, res) => {
           </tr>
 
             <tr>
-                <td style="border-top: none; border-right: none; border-bottom: none; padding: 0 25px;">
-                  <div style="display: flex; flex-direction: column; margin-top: 10px; gap: 10px;">
+                <td style="border-top: none; border-right: none; border-bottom: none; padding: 0 20px;"> <!-- Reduced padding -->
+                  <div style="display: flex; flex-direction: column; margin-top: 8px; gap: 8px;"> <!-- Reduced margins and gap -->
                     <div class="inline-underline">
                         <span class="filled-data" style="width: 80px;">${currentActionType === "approve" ? daysWithPay : ""}</span>
                         <span style="font-size: 13px;"> days with pay</span>
@@ -684,18 +910,48 @@ export const generateCSForm = async (req, res) => {
                   </div>
                 </td>
 
-                <td style="border-top: none; border-left: none; border-bottom: none; padding: 10px;">
-                    <div class="filled-data" style="min-height: 100px; text-align: left; padding: 5px;">
+                <td style="border-top: none; border-left: none; border-bottom: none; padding: 8px;"> <!-- Reduced padding -->
+                    <div class="filled-data" style="min-height: 80px; text-align: left; padding: 5px;"> <!-- Reduced height -->
                         ${currentActionType === "reject" ? effectiveActionRemarks : ""}
                     </div>
                 </td>
             </tr>
 
             <tr>
-                <td colspan="2" style="height: 50px; border-top: none; padding: 10px 300px; font-size: 14px; font-weight: bold;">
+                <td colspan="2" style="height: 40px; border-top: none; padding: 8px 250px; font-size: 14px; font-weight: bold;"> <!-- Reduced height and padding -->
                     <div class="single-sign">
-                        <div class="full-width-underline"></div>
-                        ${signatureSection}
+                      ${mayorSignature ? `
+                        <div class="compact-signature">
+                          <!-- Signature Image -->
+                          <img 
+                            src="data:image/png;base64,${mayorSignature.replace(/^data:image\/(png|jpeg|jpg);base64,/, "")}" 
+                            class="signature-image"
+                          />
+                          <!-- Name BELOW e-sign -->
+                          <div class="compact-signature-name">${displayMayorName}</div>
+                          <!-- Underline BELOW name (still present) -->
+                          <div class="compact-signature-underline"></div>
+                          <!-- Title BELOW underline -->
+                          <div class="compact-signature-title">${finalSignatureSection}</div>
+                        </div>
+                      ` : (requesting_role === "mayor" && displaySignature) ? `
+                        <div class="compact-signature">
+                          <!-- Signature Image -->
+                          <img 
+                            src="data:image/png;base64,${displaySignature.replace(/^data:image\/(png|jpeg|jpg);base64,/, "")}" 
+                            class="signature-image"
+                          />
+                          <!-- Name BELOW e-sign -->
+                          <div class="compact-signature-name">${displayMayorName}</div>
+                          <!-- Underline BELOW name (still present) -->
+                          <div class="compact-signature-underline"></div>
+                          <!-- Title BELOW underline -->
+                          <div class="compact-signature-title">${finalSignatureSection}</div>
+                        </div>
+                      ` : `
+                        <div class="full-width-underline">${displayMayorName}</div>
+                        ${finalSignatureSection}
+                      `}
                     </div>
                 </td>
             </tr>
@@ -706,7 +962,7 @@ export const generateCSForm = async (req, res) => {
     </html>
     `;
 
-    // OPTIMIZED Puppeteer configuration for better performance
+    // Rest of your existing code remains exactly the same...
     browser = await puppeteer.launch({
       headless: true,
       args: [
@@ -718,16 +974,14 @@ export const generateCSForm = async (req, res) => {
         "--disable-features=VizDisplayCompositor",
         "--disable-software-rasterizer"
       ],
-      timeout: 120000 // Increased timeout to 2 minutes
+      timeout: 120000
     });
 
     const page = await browser.newPage();
     
-    // Set timeouts
     page.setDefaultTimeout(120000);
     page.setDefaultNavigationTimeout(120000);
     
-    // Disable unnecessary resources for faster loading
     await page.setRequestInterception(true);
     page.on('request', (req) => {
       if (req.resourceType() === 'image' || req.resourceType() === 'font' || req.resourceType() === 'stylesheet') {
@@ -740,13 +994,11 @@ export const generateCSForm = async (req, res) => {
     const mmToPx = mm => Math.round(mm * 3.7795275591);
     await page.setViewport({ width: mmToPx(215.9), height: mmToPx(355.6) });
 
-    // Set content with optimized wait condition
     await page.setContent(htmlContent, { 
-      waitUntil: "load", // Changed to 'load' for faster rendering
+      waitUntil: "load",
       timeout: 120000 
     });
 
-    // Minimal waiting - just ensure basic content is loaded
     await page.waitForFunction(() => document.querySelector('.container'), { timeout: 10000 });
 
     const pdfBuffer = await page.pdf({
@@ -766,7 +1018,6 @@ export const generateCSForm = async (req, res) => {
   } catch (err) {
     console.error("CS Form generation error:", err);
     
-    // Ensure browser is closed even on error
     if (browser) {
       try {
         await browser.close();
@@ -775,6 +1026,71 @@ export const generateCSForm = async (req, res) => {
       }
     }
     
+    res.status(500).json({
+      message: "Internal Server Error",
+      error: err.message,
+    });
+  }
+};
+
+// NEW: Add this function to save signatures to the database
+export const saveSignature = async (req, res) => {
+  try {
+    const { leave_application_id, signature_data, requesting_role } = req.body;
+
+    if (!leave_application_id || !signature_data || !requesting_role) {
+      return res.status(400).json({
+        message: "Leave application ID, signature data, and role are required"
+      });
+    }
+
+    let updateQuery;
+    switch (requesting_role) {
+      case 'office_head':
+        updateQuery = sql`
+          UPDATE leave_applications 
+          SET office_head_signature = ${signature_data}
+          WHERE id = ${leave_application_id}
+          RETURNING id, office_head_signature
+        `;
+        break;
+      case 'admin':
+        updateQuery = sql`
+          UPDATE leave_applications 
+          SET hr_signature = ${signature_data}
+          WHERE id = ${leave_application_id}
+          RETURNING id, hr_signature
+        `;
+        break;
+      case 'mayor':
+        updateQuery = sql`
+          UPDATE leave_applications 
+          SET mayor_signature = ${signature_data}
+          WHERE id = ${leave_application_id}
+          RETURNING id, mayor_signature
+        `;
+        break;
+      default:
+        return res.status(400).json({
+          message: "Invalid role specified"
+        });
+    }
+
+    const result = await updateQuery;
+
+    if (result.length === 0) {
+      return res.status(404).json({
+        message: "Leave application not found"
+      });
+    }
+
+    res.json({
+      message: "Signature saved successfully",
+      success: true
+    });
+
+  } catch (err) {
+    console.error("Error saving signature:", err);
     res.status(500).json({
       message: "Internal Server Error",
       error: err.message,

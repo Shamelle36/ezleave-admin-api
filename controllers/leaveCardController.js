@@ -200,3 +200,91 @@ export const getEmployeeWithLeaveBalances = async (req, res) => {
     res.status(500).json({ error: "Server error", details: err.message });
   }
 };
+
+// 🕒 Auto Earn Leave Credits (Runs Once Per Month)
+export const autoEarnLeaveCredits = async () => {
+  try {
+    console.log("⏳ Running monthly leave credit job...");
+
+    // Get all employees
+    const employees = await sql`SELECT id FROM employee_list`;
+
+    const today = new Date();
+
+    // Compute PREVIOUS month
+    let year = today.getFullYear();
+    let month = today.getMonth(); // previous month (0–11)
+
+    if (month === 0) {
+      month = 12;
+      year = year - 1;
+    }
+
+    // month is now 1–12
+    const lastDay = new Date(year, month, 0).getDate();
+
+    const period = `${month}/1-${lastDay}/${year}`;
+
+    for (const emp of employees) {
+      const empId = emp.id;
+
+      // Check last entry
+      const last = await sql`
+        SELECT period
+        FROM leave_cards
+        WHERE employee_id = ${empId}
+        ORDER BY id DESC
+        LIMIT 1;
+      `;
+
+      // Skip if already earned
+      if (last.length > 0 && last[0].period === period) {
+        console.log(`⚠️ Already credited for ${period} | Emp: ${empId}`);
+        continue;
+      }
+
+      // Get current balances (employee must exist)
+      const lastBalance = await sql`
+        SELECT vl_balance, sl_balance
+        FROM leave_cards
+        WHERE employee_id = ${empId}
+        ORDER BY id DESC
+        LIMIT 1;
+      `;
+
+      // If employee has no leave_card history → SKIP
+      if (lastBalance.length === 0) {
+        console.log(`⏭ Skipped — No leave card record yet | Emp: ${empId}`);
+        continue;
+      }
+
+      const vlBalance = Number(lastBalance[0].vl_balance);
+      const slBalance = Number(lastBalance[0].sl_balance);
+
+      const newVlBalance = vlBalance + 1.25;
+      const newSlBalance = slBalance + 1.25;
+
+      await sql`
+        INSERT INTO leave_cards (
+          employee_id, period, particulars,
+          vl_earned, vl_used, vl_balance,
+          sl_earned, sl_used, sl_balance,
+          remarks
+        )
+        VALUES (
+          ${empId}, ${period}, NULL,
+          1.25, NULL, ${newVlBalance},
+          1.25, NULL, ${newSlBalance},
+          NULL
+        );
+      `;
+
+      console.log(`✅ Credited 1.25 VL/SL for Emp ID: ${empId}`);
+    }
+
+    console.log("🎉 Monthly leave credit job completed.");
+
+  } catch (err) {
+    console.error("❌ Auto earn error:", err);
+  }
+};

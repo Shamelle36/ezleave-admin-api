@@ -4,7 +4,11 @@ import {
   getLeaveRequestsCount,
   approveLeaveRequest,
   rejectLeaveRequest,
-  getMonthlyLeaveCounts
+  getMonthlyLeaveCounts,
+  getLeaveCalendarByDay,
+  getLeaveCalendarByMonth,
+  checkOverlappingLeavesForOfficeHead,
+  testOverlapCheck,
 } from "../controllers/leaveRequestController.js";
 
 const router = express.Router();
@@ -23,5 +27,13 @@ router.patch("/:id/approve", approveLeaveRequest);
 
 // 📌 Reject a leave request
 router.patch("/:id/reject", rejectLeaveRequest);
+
+router.get('/leave-calendar/day/:date', getLeaveCalendarByDay);
+
+router.get('/leave-calendar/month/:year/:month', getLeaveCalendarByMonth);
+
+router.post('/check-overlapping-leaves', checkOverlappingLeavesForOfficeHead);
+
+router.get("/test-overlap", testOverlapCheck);
 
 export default router;
