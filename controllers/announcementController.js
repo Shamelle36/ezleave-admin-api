@@ -41,7 +41,6 @@ export const getAnnouncements = async (req, res) => {
         a.id, 
         a.title, 
         a.details, 
-        a.priority, 
         a.created_at, 
         a.updated_at,
         u.full_name AS posted_by, 
@@ -77,7 +76,6 @@ export const getAnnouncements = async (req, res) => {
         id: a.id,
         title: a.title,
         details: a.details,
-        priority: a.priority,
         created_at: formatPHDateTime(a.created_at),
         updated_at: formatPHDateTime(a.updated_at),
         posted_by: a.posted_by,
@@ -108,7 +106,7 @@ export const createAnnouncement = async (req, res) => {
     }
 
     const admin = adminCheck[0];
-    const { title, details, priority } = req.body;
+    const { title, details } = req.body;
 
     // Process images only
     let imageUrls = [];
@@ -125,9 +123,9 @@ export const createAnnouncement = async (req, res) => {
 
     // Insert announcement with images only
     const result = await sql`
-      INSERT INTO announcements (title, details, priority, created_by, images)
-      VALUES (${title}, ${details}, ${priority}, ${created_by}, ${sql.array(imageUrls)})
-      RETURNING id, title, details, priority, created_by, created_at, images
+      INSERT INTO announcements (title, details, created_by, images)
+      VALUES (${title}, ${details}, ${created_by}, ${sql.array(imageUrls)})
+      RETURNING id, title, details, created_by, created_at, images
     `;
 
     const announcementId = result[0].id;
@@ -153,7 +151,6 @@ export const createAnnouncement = async (req, res) => {
         a.id, 
         a.title, 
         a.details, 
-        a.priority, 
         a.created_at, 
         a.updated_at,
         a.images,
@@ -205,7 +202,7 @@ export const createAnnouncement = async (req, res) => {
 export const updateAnnouncement = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, details, priority, created_by } = req.body;
+    const { title, details, created_by } = req.body;
 
     // Process new images only
     let imageUrls = null;
@@ -234,7 +231,6 @@ export const updateAnnouncement = async (req, res) => {
       SET
         title = ${title ?? current[0].title},
         details = ${details ?? current[0].details},
-        priority = ${priority ?? current[0].priority},
         images = ${sql.array(imagesForDb)},
         updated_at = NOW()
       WHERE id = ${id}
@@ -245,7 +241,6 @@ export const updateAnnouncement = async (req, res) => {
         a.id, 
         a.title, 
         a.details, 
-        a.priority, 
         a.created_at, 
         a.updated_at,
         a.images,

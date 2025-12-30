@@ -593,44 +593,214 @@ export async function sendAdminMessage(req, res) {
         NOW(),
         false,
         false
-      ) RETURNING id, time;
+      ) RETURNING *;
     `;
 
     console.log('✅ Message inserted successfully:', result[0]);
 
-    // Prepare response data
-    const responseData = {
-      message_id: result[0].id,
-      sent_at: result[0].time,
-      sender: {
-        id: sender_id,
-        type: sender_type,
-        name: senderName,
-        email: senderEmail
-      },
-      receiver: {
-        id: receiver_id,
-        type: receiver_type,
-        name: receiverName,
-        email: receiverEmail
-      },
-      message: message
+    // ✅ ADD NOTIFICATION FOR RECEIVER (WITH PUSH NOTIFICATION)
+    const notificationMessage = `New message from ${senderName}: ${message.substring(0, 100)}${message.length > 100 ? '...' : ''}`;
+    
+    console.log(`📢 Creating notification for receiver: ${receiver_id}`);
+    console.log(`📢 Notification message: ${notificationMessage}`);
+    
+    try {
+      // Check if notifications table exists
+      const tableCheck = await sql`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'notifications'
+        );
+      `;
+      
+      console.log(`📊 Notifications table exists: ${tableCheck[0]?.exists}`);
+      
+      if (tableCheck[0]?.exists) {
+        // Insert into notifications table
+        const notificationResult = await sql`
+          INSERT INTO notifications (
+            user_id,
+            message,
+            read,
+            created_at
+          ) VALUES (
+            ${receiver_id},
+            ${notificationMessage},
+            false,
+            NOW()
+          ) RETURNING *;
+        `;
+        
+        console.log(`✅ Database notification created:`, notificationResult[0]);
+        console.log(`📋 Notification ID: ${notificationResult[0]?.id}`);
+        
+        // ✅ SEND PUSH NOTIFICATION WITH REPLY SUPPORT
+        try {
+          // Check if user has a push token
+          const tokenResult = await sql`
+            SELECT expo_push_token FROM employee_push_tokens WHERE user_id = ${receiver_id} LIMIT 1
+          `;
+          
+          if (tokenResult.length > 0 && tokenResult[0].expo_push_token) {
+            console.log(`📱 Found push token for user ${receiver_id}, sending push notification with reply support...`);
+            
+            // Send push notification via Expo WITH REPLY ACTION
+            const pushResponse = await fetch("https://exp.host/--/api/v2/push/send", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                to: tokenResult[0].expo_push_token,
+                sound: "default",
+                title: `New Message from ${senderName}`,
+                body: message.substring(0, 100) + (message.length > 100 ? '...' : ''),
+                // ✅ ADD REPLY ACTION FOR ANDROID
+                android: {
+                  channelId: "messages",
+                  actions: [
+                    {
+                      title: "Reply",
+                      actionId: "reply",
+                      icon: "ic_reply",
+                      type: "text",
+                      placeholder: "Type a reply..."
+                    },
+                    {
+                      title: "Mark as Read",
+                      actionId: "read",
+                      icon: "ic_done"
+                    }
+                  ]
+                },
+                // ✅ ADD CATEGORY FOR IOS QUICK REPLIES
+                categoryId: "MESSAGE_REPLY",
+                // ✅ ADD EXTRA DATA FOR REPLY FUNCTIONALITY
+                data: { 
+                  type: 'new_message',
+                  notificationType: 'direct_message',
+                  senderId: sender_id,
+                  senderType: sender_type,
+                  senderName: senderName,
+                  messageId: result[0].id,
+                  conversationId: `${sender_type}:${sender_id}`, // For grouping notifications
+                  replyAction: "REPLY_TO_MESSAGE",
+                  timestamp: new Date().toISOString(),
+                  // For deep linking to specific conversation
+                  url: `yourapp://messages/${sender_type}/${sender_id}`
+                }
+              }),
+            });
+            
+            const pushResult = await pushResponse.json();
+            console.log("📤 Push notification with reply sent:", pushResult);
+            
+            if (pushResult.data && pushResult.data.status === 'ok') {
+              console.log("✅ Push notification with reply delivered successfully");
+            } else {
+              console.warn("⚠️ Push notification may not have been delivered:", pushResult);
+            }
+          } else {
+            console.log(`📱 No push token found for user ${receiver_id}. User might need to enable notifications in the app.`);
+          }
+        } catch (pushError) {
+          console.warn("⚠️ Could not send push notification:", pushError.message);
+        }
+      } else {
+        console.error('❌ Notifications table does not exist!');
+      }
+    } catch (notificationError) {
+      console.error("❌ Error creating notification:", notificationError);
+      console.error("❌ Full error details:", {
+        message: notificationError.message,
+        code: notificationError.code,
+        detail: notificationError.detail
+      });
+      // Don't fail the whole request if notification fails
+    }
+
+    // ✅ Prepare message data for WebSocket
+    const messageData = {
+      id: result[0].id,
+      sender_id: senderIdentifier,
+      sender_type: sender_type,
+      receiver_id: receiverIdentifier,
+      receiver_type: receiver_type,
+      message: message,
+      time: result[0].time,
+      sender_name: senderName,
+      receiver_name: receiverName,
+      pinned: false,
+      read_status: false
     };
 
-    sendToUser(receiver_id, receiver_type, {
+    // ✅ TRY TO SEND VIA WEBSOCKET (user might be online later)
+    const receiverSent = sendToUser(receiver_id, receiver_type, {
       type: 'new_message',
-      message: responseData
+      message: messageData,
+      notification: {
+        message: notificationMessage,
+        timestamp: new Date().toISOString(),
+        from: senderName,
+        replySupported: true, // Indicate reply is supported
+        senderId: sender_id,
+        senderType: sender_type
+      }
     });
 
-    sendToUser(sender_id, sender_type, {
-      type: 'message_delivered',
-      messageId: result[0].id
+    // ✅ Send notification via WebSocket (if user is online)
+    sendToUser(receiver_id, receiver_type, {
+      type: 'new_notification',
+      notification: {
+        message: notificationMessage,
+        timestamp: new Date().toISOString(),
+        from: senderName,
+        messageId: result[0].id,
+        replySupported: true,
+        senderId: sender_id,
+        senderType: sender_type
+      }
     });
+
+    // ✅ Send confirmation to sender
+    sendToUser(sender_id, sender_type, {
+      type: 'message_sent',
+      message: {
+        id: result[0].id,
+        messageId: result[0].id,
+        timestamp: result[0].time,
+        receiverName: receiverName
+      }
+    });
+
+    console.log(`📤 WebSocket attempted: ${receiverSent ? 'Sent' : 'User offline'}`);
+    console.log(`📨 Full message data:`, messageData);
+
+    // Also check if notification was inserted by querying it
+    try {
+      const checkNotification = await sql`
+        SELECT * FROM notifications 
+        WHERE user_id = ${receiver_id} 
+        ORDER BY created_at DESC 
+        LIMIT 1;
+      `;
+      
+      if (checkNotification.length > 0) {
+        console.log(`🔍 Latest notification for ${receiver_id}:`, checkNotification[0]);
+      } else {
+        console.log(`⚠️ No recent notifications found for ${receiver_id}`);
+      }
+    } catch (checkError) {
+      console.error("❌ Error checking notification:", checkError);
+    }
 
     res.status(201).json({ 
       success: true, 
       message: "Message sent successfully",
-      data: responseData
+      data: messageData,
+      notification_sent: true,
+      push_notification_sent: true,
+      reply_supported: true, // Indicate reply is supported
+      websocket_delivered: receiverSent
     });
 
   } catch (error) {
@@ -654,6 +824,204 @@ export async function sendAdminMessage(req, res) {
     res.status(statusCode).json({ 
       success: false, 
       message: errorMessage,
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+}
+
+/**
+ * 💬 Handle notification replies from mobile devices
+ */
+export async function handleNotificationReply(req, res) {
+  try {
+    console.log('📱 Received notification reply:', req.body);
+    
+    const { 
+      notificationId,
+      messageId,
+      senderId,
+      senderType,
+      senderName,
+      receiverId,
+      receiverType,
+      replyText,
+      pushToken,
+      timestamp
+    } = req.body;
+
+    if (!replyText || !senderId || !receiverId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Missing required fields: replyText, senderId, receiverId" 
+      });
+    }
+
+    // Determine who is replying (reverse the sender/receiver)
+    // If notification came from senderId, then receiver is replying
+    const replierId = receiverId; // The one who received the original message
+    const replierType = receiverType;
+    const originalSenderId = senderId;
+    const originalSenderType = senderType;
+
+    // Create identifiers
+    const replierIdentifier = `${replierType}:${replierId}`;
+    const originalSenderIdentifier = `${originalSenderType}:${originalSenderId}`;
+
+    console.log('📝 Processing reply:', {
+      originalSender: originalSenderIdentifier,
+      replier: replierIdentifier,
+      replyText
+    });
+
+    // Insert reply as a new message
+    const result = await sql`
+      INSERT INTO admin_messages (
+        sender_id, 
+        sender_type, 
+        receiver_id, 
+        receiver_type, 
+        message, 
+        time, 
+        pinned, 
+        read_status
+      ) VALUES (
+        ${replierIdentifier},
+        ${replierType},
+        ${originalSenderIdentifier},
+        ${originalSenderType},
+        ${replyText},
+        NOW(),
+        false,
+        false
+      ) RETURNING *;
+    `;
+
+    console.log('✅ Reply message inserted successfully:', result[0]);
+
+    // Get replier's name for notification
+    let replierName = '';
+    switch(replierType) {
+      case 'useradmin':
+        const userAdmin = await sql`SELECT full_name FROM useradmin WHERE id = ${replierId}`;
+        replierName = userAdmin[0]?.full_name || 'User';
+        break;
+      case 'admin_account':
+        const adminAcc = await sql`SELECT full_name FROM admin_accounts WHERE id = ${replierId} AND is_active = true`;
+        replierName = adminAcc[0]?.full_name || 'User';
+        break;
+      case 'user':
+        const user = await sql`SELECT first_name, last_name FROM users WHERE user_id = ${replierId}`;
+        replierName = user[0] ? `${user[0].first_name} ${user[0].last_name}` : 'User';
+        break;
+    }
+
+    // Create notification for original sender
+    const notificationMessage = `Reply from ${replierName}: ${replyText.substring(0, 100)}${replyText.length > 100 ? '...' : ''}`;
+    
+    try {
+      await sql`
+        INSERT INTO notifications (
+          user_id,
+          message,
+          read,
+          created_at
+        ) VALUES (
+          ${originalSenderId},
+          ${notificationMessage},
+          false,
+          NOW()
+        );
+      `;
+      console.log(`✅ Created notification for original sender ${originalSenderId}`);
+    } catch (notifError) {
+      console.error("❌ Error creating reply notification:", notifError.message);
+    }
+
+    // Send push notification to original sender about the reply
+    try {
+      // Get original sender's push token
+      const tokenResult = await sql`
+        SELECT expo_push_token FROM employee_push_tokens WHERE user_id = ${originalSenderId} LIMIT 1
+      `;
+      
+      if (tokenResult.length > 0 && tokenResult[0].expo_push_token) {
+        console.log(`📱 Sending reply notification to ${originalSenderId}`);
+        
+        const pushResponse = await fetch("https://exp.host/--/api/v2/push/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to: tokenResult[0].expo_push_token,
+            sound: "default",
+            title: `Reply from ${replierName}`,
+            body: replyText.substring(0, 100) + (replyText.length > 100 ? '...' : ''),
+            android: {
+              channelId: "messages",
+              actions: [
+                {
+                  title: "Reply",
+                  actionId: "reply",
+                  icon: "ic_reply",
+                  type: "text",
+                  placeholder: "Type a reply..."
+                }
+              ]
+            },
+            categoryId: "MESSAGE_REPLY",
+            data: { 
+              type: 'message_reply',
+              notificationType: 'direct_message',
+              senderId: replierId,
+              senderType: replierType,
+              senderName: replierName,
+              messageId: result[0].id,
+              conversationId: `${replierType}:${replierId}`,
+              replyAction: "REPLY_TO_MESSAGE",
+              timestamp: new Date().toISOString(),
+              url: `yourapp://messages/${replierType}/${replierId}`
+            }
+          }),
+        });
+        
+        console.log("📤 Reply notification sent to original sender");
+      }
+    } catch (pushError) {
+      console.warn("⚠️ Could not send reply notification:", pushError.message);
+    }
+
+    // Send WebSocket notification if original sender is online
+    sendToUser(originalSenderId, originalSenderType, {
+      type: 'new_message',
+      message: {
+        id: result[0].id,
+        sender_id: replierIdentifier,
+        sender_type: replierType,
+        receiver_id: originalSenderIdentifier,
+        receiver_type: originalSenderType,
+        message: replyText,
+        time: result[0].time,
+        sender_name: replierName,
+        receiver_name: senderName, // Original sender's name
+        pinned: false,
+        read_status: false
+      }
+    });
+
+    res.status(201).json({ 
+      success: true, 
+      message: "Reply sent successfully",
+      data: {
+        messageId: result[0].id,
+        timestamp: result[0].time,
+        sentTo: originalSenderId
+      }
+    });
+
+  } catch (error) {
+    console.error("❌ Error handling notification reply:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Server error",
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }

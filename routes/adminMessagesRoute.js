@@ -7,7 +7,8 @@ import {
   sendAdminMessage,
   togglePinMessage,
   getMessageStats,
-  markMessagesAsRead
+  markMessagesAsRead,
+  handleNotificationReply
 } from '../controllers/adminMessagesController.js';
 
 const router = express.Router();
@@ -35,5 +36,7 @@ router.post('/mark-read', markMessagesAsRead);
 
 // Get message statistics
 router.get('/stats', getMessageStats);
+
+router.post('/messages/handle-reply', handleNotificationReply);
 
 export default router;

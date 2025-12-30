@@ -9,9 +9,16 @@ router.get("/", async (req, res) => {
       SELECT a.id, a.created_at, a.activity, a.details, a.ip_address,
              u.email, u.full_name, u.role
       FROM audit_logs a
-      JOIN userAdmin u ON a.user_id = u.id
+      LEFT JOIN userAdmin u ON a.user_id = u.id
       ORDER BY a.created_at DESC
     `;
+
+    // Count suspicious alerts (signup attempts)
+    const suspiciousCount = result.filter(log => 
+      log.activity.toLowerCase().includes('signup') || 
+      log.activity.toLowerCase().includes('attempted') ||
+      log.activity.toLowerCase().includes('failed login')
+    ).length;
 
     // Convert created_at to PH date + 12-hour time
     const formatted = result.map((log) => ({
@@ -27,7 +34,14 @@ router.get("/", async (req, res) => {
       }),
     }));
 
-    res.json(formatted);
+    // Return both logs and summary
+    res.json({
+      logs: formatted,
+      summary: {
+        totalLogs: result.length,
+        suspiciousAlerts: suspiciousCount
+      }
+    });
   } catch (err) {
     console.error("Error fetching logs:", err);
     res.status(500).json({ error: "Error fetching logs" });

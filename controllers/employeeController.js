@@ -61,6 +61,88 @@ export const addEmployee = async (req, res) => {
       RETURNING *
     `;
 
+    // AFTER employee insert
+    const eligibleStatuses = ["Temporary", "Permanent", "Contractual", "Casual", "Coterminous"];
+
+    if (eligibleStatuses.includes(employment_status)) {
+      const year = new Date().getFullYear();
+
+      // Neutral leaves for everyone
+      const neutralLeaves = [
+        { type: "ML", days: 5 },
+        { type: "SPL", days: 3 },
+        { type: "SOLO", days: 7 },
+        { type: "VAWC", days: 10 },
+        { type: "RL", days: 0 },
+        { type: "MCW", days: 60 },
+        { type: "STUDY", days: 180 },
+        { type: "CALAMITY", days: 5 },
+        { type: "MOL", days: 0 },
+        { type: "TL", days: 0 },
+        { type: "AL", days: 0 },
+      ];
+
+      // Insert neutral leaves
+      for (const leave of neutralLeaves) {
+        await sql`
+          INSERT INTO leave_entitlements (
+            user_id,
+            leave_type,
+            year,
+            total_days,
+            used_days
+          ) VALUES (
+            ${employee.id},
+            ${leave.type},
+            ${year},
+            ${leave.days},
+            0
+          )
+          ON CONFLICT (user_id, leave_type, year) DO NOTHING;
+        `;
+      }
+
+      // Female-only leave
+      if (gender === "Female") {
+        await sql`
+          INSERT INTO leave_entitlements (
+            user_id,
+            leave_type,
+            year,
+            total_days,
+            used_days
+          ) VALUES (
+            ${employee.id},
+            'MAT',
+            ${year},
+            105,
+            0
+          )
+          ON CONFLICT (user_id, leave_type, year) DO NOTHING;
+        `;
+      }
+
+      // Male-only leave
+      if (gender === "Male" && civil_status === "Married") {
+        await sql`
+          INSERT INTO leave_entitlements (
+            user_id,
+            leave_type,
+            year,
+            total_days,
+            used_days
+          ) VALUES (
+            ${employee.id},
+            'PAT',
+            ${year},
+            7,
+            0
+          )
+          ON CONFLICT (user_id, leave_type, year) DO NOTHING;
+        `;
+      }
+    }
+
     res.status(201).json(employee);
   } catch (error) {
     console.error("Error adding employee:", error);
@@ -282,3 +364,100 @@ export async function getEmployeeCount(req, res) {
 }
 
 
+// 📌 Get employee leave balances
+export const getEmployeeLeaveBalances = async (req, res) => {
+  const { id } = req.params;
+
+  // Map short code -> full name
+  const leaveTypeFullNameMap = {
+    "VL": "Vacation Leave",
+    "ML": "Mandatory/Forced Leave",
+    "SL": "Sick Leave",
+    "MAT": "Maternity Leave",
+    "PAT": "Paternity Leave",
+    "SPL": "Special Privilege Leave",
+    "SOLO": "Solo Parent Leave",
+    "STUDY": "Study Leave",
+    "VAWC": "VAWC Leave",
+    "RL": "Rehabilitation Leave",
+    "SLBW": "Special Leave Benefits for Women",
+    "CALAMITY": "Special Emergency (Calamity) Leave",
+    "MOL": "Monetization of Leave Credits",
+    "TL": "Terminal Leave",
+    "AL": "Adoption Leave",
+  };
+
+  try {
+    // Fetch leave entitlements for the employee
+    let leaveBalances = await sql`
+      SELECT 
+        leave_type,
+        total_days,
+        used_days,
+        balance_days,
+        year
+      FROM leave_entitlements
+      WHERE user_id = ${id}
+      ORDER BY leave_type;
+    `;
+
+    // Map short codes to full names
+    leaveBalances = leaveBalances.map(l => ({
+      ...l,
+      leave_type: leaveTypeFullNameMap[l.leave_type] || l.leave_type
+    }));
+
+    res.json({
+      success: true,
+      leaveBalances
+    });
+
+  } catch (error) {
+    console.error("Error fetching leave balances:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch leave balances"
+    });
+  }
+};
+
+// 📌 Update leave entitlement
+export const updateLeaveEntitlement = async (req, res) => {
+  const { userId, leaveType, year, totalDays, usedDays } = req.body;
+  
+  try {
+    // Update only total_days and used_days - balance_days will be auto-calculated
+    const result = await sql`
+      UPDATE leave_entitlements
+      SET 
+        total_days = ${totalDays},
+        used_days = ${usedDays},
+        updated_at = NOW()
+      WHERE 
+        user_id = ${userId} 
+        AND leave_type = ${leaveType}
+        AND year = ${year}
+      RETURNING *;
+    `;
+
+    if (result.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        error: "Leave entitlement not found" 
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Leave entitlement updated successfully",
+      data: result[0]
+    });
+
+  } catch (error) {
+    console.error("Error updating leave entitlement:", error);
+    res.status(500).json({ 
+      success: false, 
+      error: "Failed to update leave entitlement" 
+    });
+  }
+};

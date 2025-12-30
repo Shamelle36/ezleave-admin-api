@@ -69,7 +69,6 @@ export async function testOverlapCheck(req, res) {
   }
 }
 
-// UPDATED: Works as both route handler AND standalone function
 export async function checkOverlappingLeavesForOfficeHead(reqOrLeaveRequest, res) {
   try {
     // Determine if called as route handler (has res) or standalone function
@@ -77,7 +76,6 @@ export async function checkOverlappingLeavesForOfficeHead(reqOrLeaveRequest, res
     const leaveRequest = isRouteHandler ? reqOrLeaveRequest.body : reqOrLeaveRequest;
     
     console.log("🔍 Starting overlap check for leave request:", leaveRequest?.id);
-    console.log("📋 Request data:", leaveRequest);
     
     if (!leaveRequest) {
       const errorMsg = "No leave request data provided";
@@ -87,58 +85,60 @@ export async function checkOverlappingLeavesForOfficeHead(reqOrLeaveRequest, res
       return { hasOverlap: false, violations: [], error: errorMsg };
     }
 
-    // Normalize Postgres daterange "(2025-12-15,2025-12-17)" → "[2025-12-15,2025-12-17)"
+    // Parse inclusive dates
     let raw = leaveRequest.inclusive_dates;
-
+    
     if (!raw) {
       console.log("❌ inclusive_dates is undefined");
       const result = { hasOverlap: false, violations: [] };
-      if (isRouteHandler) {
-        return res.json(result);
-      }
+      if (isRouteHandler) return res.json(result);
       return result;
     }
 
-    // Convert to bracket style expected by regex
-    raw = raw.replace("(", "[").replace(")", ")").trim();
-
-    const datesMatch = raw.match(/\[(.*?),(.*?)\)/);
-
-    if (!datesMatch) {
+    // Extract dates from range format [start,end)
+    const dateMatch = raw.match(/\[(.*?),(.*?)[\])]/);
+    if (!dateMatch) {
       console.log("❌ No date match found for:", raw);
       const result = { hasOverlap: false, violations: [] };
-      if (isRouteHandler) {
-        return res.json(result);
-      }
+      if (isRouteHandler) return res.json(result);
       return result;
     }
 
-    const startDate = new Date(datesMatch[1]);
-    const endDate = new Date(datesMatch[2]);
+    const startDate = new Date(dateMatch[1]);
+    const endDate = new Date(dateMatch[2]);
     
-    console.log("📅 Parsed dates:", { startDate, endDate, original: leaveRequest.inclusive_dates });
-    
+    console.log("📅 Parsed dates:", { 
+      start: startDate.toISOString().split('T')[0], 
+      end: endDate.toISOString().split('T')[0] 
+    });
+
     // Get employee's department
     const [employee] = await sql`
       SELECT department, position
       FROM employee_list
       WHERE user_id = ${leaveRequest.user_id}
+      AND status = 'Active'
       LIMIT 1
     `;
 
     if (!employee) {
       console.log("❌ Employee not found:", leaveRequest.user_id);
       const result = { hasOverlap: false, violations: [] };
-      if (isRouteHandler) {
-        return res.json(result);
-      }
+      if (isRouteHandler) return res.json(result);
       return result;
     }
 
     console.log("👤 Employee department:", employee.department);
     
-    // Get total active employees
-    const totalEmployees = await getTotalEmployeeCount();
+    // Get department size
+    const [deptSizeResult] = await sql`
+      SELECT COUNT(*) as dept_size
+      FROM employee_list
+      WHERE department = ${employee.department}
+      AND status = 'Active'
+    `;
+    
+    const deptSize = parseInt(deptSizeResult?.dept_size || 1);
     
     // Check each date in the leave period
     const violations = [];
@@ -146,47 +146,42 @@ export async function checkOverlappingLeavesForOfficeHead(reqOrLeaveRequest, res
     
     while (currentDate < endDate) {
       const dateStr = currentDate.toISOString().split('T')[0];
+      const monthDay = `${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
+      const isMajorHoliday = MAJOR_HOLIDAYS.includes(monthDay);
       
-      console.log(`📊 Checking date: ${dateStr}`);
+      console.log(`📊 Checking date: ${dateStr} (${isMajorHoliday ? 'Holiday' : 'Regular'})`);
       
-      // Get count of approved leaves for this date (excluding current leave)
+      // FIXED: Get count of approved leaves for this specific date and department
       const [leaveCountResult] = await sql`
         SELECT COUNT(DISTINCT la.user_id) as count_on_leave
         FROM leave_applications la
         JOIN employee_list el ON la.user_id = el.user_id
         WHERE la.status = 'Approved'
-          AND la.id != ${leaveRequest.id}
+          AND la.id != ${leaveRequest.id || 0}
+          AND el.department = ${employee.department}
           AND ${dateStr}::date >= LOWER(la.inclusive_dates)
           AND ${dateStr}::date < UPPER(la.inclusive_dates)
-          AND el.department = ${employee.department}
+          AND el.status = 'Active'
       `;
       
       const countOnLeave = parseInt(leaveCountResult?.count_on_leave || 0);
       
-      console.log(`Employees on leave in ${employee.department}: ${countOnLeave}`);
+      console.log(`   Employees on leave in ${employee.department}: ${countOnLeave}`);
       
-      // Determine max allowed
-      const monthDay = `${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
-      const isMajorHoliday = MAJOR_HOLIDAYS.includes(monthDay);
-      
+      // Determine max allowed based on day type
       let maxAllowed;
       if (isMajorHoliday) {
-        // Get department size for holiday calculation
-        const [deptSizeResult] = await sql`
-          SELECT COUNT(*) as dept_size
-          FROM employee_list
-          WHERE department = ${employee.department}
-            AND status = 'Active'
-        `;
-        const deptSize = parseInt(deptSizeResult?.dept_size || 1);
+        // For holidays: maximum 50% of department
         maxAllowed = Math.floor(deptSize / 2);
         console.log(`   ⭐ Holiday (${monthDay}): Max allowed = ${maxAllowed} (half of ${deptSize})`);
       } else {
+        // For regular days: maximum 3 employees
         maxAllowed = 3;
         console.log(`   📅 Regular day: Max allowed = ${maxAllowed}`);
       }
       
       // Check if approving would exceed limit
+      // Note: We check if countOnLeave >= maxAllowed, because after approval it would be countOnLeave + 1
       if (countOnLeave >= maxAllowed) {
         console.log(`   ⚠️ VIOLATION: ${countOnLeave} >= ${maxAllowed}`);
         violations.push({
@@ -203,7 +198,6 @@ export async function checkOverlappingLeavesForOfficeHead(reqOrLeaveRequest, res
     }
     
     console.log(`✅ Overlap check complete. Violations: ${violations.length}`);
-    console.log("Violations details:", violations);
     
     const result = {
       hasOverlap: violations.length > 0,
@@ -215,6 +209,7 @@ export async function checkOverlappingLeavesForOfficeHead(reqOrLeaveRequest, res
       return res.json(result);
     }
     return result;
+    
   } catch (error) {
     console.error("❌ Error checking overlapping leaves:", error);
     const errorResult = { 
@@ -265,7 +260,8 @@ export async function getLeaveRequests(req, res) {
         lr.mayor_date,
         lr.first_name,
         lr.middle_name,
-        lr.last_name
+        lr.last_name,
+        lr.cs_form_generated
       FROM leave_applications lr
       JOIN employee_list el ON lr.user_id = el.user_id
       ORDER BY lr.id DESC;
@@ -495,6 +491,22 @@ export async function approveLeaveRequest(req, res) {
         WHERE id = ${id};
       `;
       return res.status(200).json({ message: `HR/Admin approval successful` });
+    }
+
+     if (role === "mayor") {
+      await sql`
+        UPDATE leave_applications
+        SET mayor_status = 'Approved',
+            mayor_id = ${actionBy},
+            mayor_date = NOW(),
+            status = 'Approved',
+            approver_name = ${approverName},
+            approver_date = CURRENT_DATE,
+            remarks = ${remarks ?? null},
+            updated_at = NOW(),
+            cs_form_generated = true
+        WHERE id = ${id};
+      `;
     }
 
     // 4️⃣ Mayor approval (final) - NO OVERLAPPING CHECK HERE
@@ -728,7 +740,8 @@ export async function rejectLeaveRequest(req, res) {
           approver_name = ${approverName},
           approver_date = CURRENT_DATE,
           remarks = ${remarks ?? null},
-          updated_at = NOW()
+          updated_at = NOW(),
+          cs_form_generated = true
         WHERE id = ${id};
       `;
     }

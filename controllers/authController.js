@@ -20,18 +20,35 @@ const storage = new CloudinaryStorage({
 export const upload = multer({ storage });
 
 // ==============================
-// 🧩 Signup (One-time only)
+// 🧩 Signup (One-time only) - WITH AUDIT LOGGING
 // ==============================
+// In your signup function, update the logActivity calls:
 export const signup = async (req, res) => {
   try {
     const { email, fullName, password } = req.body;
+    
+    // Log the attempt immediately
+    console.log(`Signup attempt from IP: ${req.ip}, Email: ${email}`);
 
-    // check if admin already exists
+    // Check if admin already exists
     const result = await sql`SELECT * FROM useradmin WHERE role = 'admin' LIMIT 1`;
+    
     if (result.length > 0) {
-      return res.status(400).json({ message: "Admin account already exists." });
+      // Admin already exists - log this as SUSPICIOUS
+      await logActivity(
+        null,
+        'guest',
+        "SUSPICIOUS - Attempted Signup (Admin Exists)",
+        `Suspicious signup attempt for email: ${email}. Admin account already exists. IP: ${req.ip}`,
+        req.ip
+      );
+      
+      return res.status(400).json({ 
+        message: "Admin account already exists. Only one admin account is allowed." 
+      });
     }
 
+    // If we reach here, no admin exists - proceed with signup
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const newUser = await sql`
@@ -40,11 +57,12 @@ export const signup = async (req, res) => {
       RETURNING id, email, full_name, role
     `;
 
+    // Log successful signup (this might also be suspicious if only one admin is allowed)
     await logActivity(
       newUser[0].id,
       newUser[0].role,
-      "Signup",
-      `Admin ${newUser[0].email} registered`,
+      "SUSPICIOUS - Admin Signup Completed",
+      `Admin ${newUser[0].email} registered successfully. Note: Only one admin should exist. IP: ${req.ip}`,
       req.ip
     );
 
@@ -53,7 +71,17 @@ export const signup = async (req, res) => {
       user: newUser[0],
     });
   } catch (err) {
-    console.error(err);
+    console.error("Signup error:", err);
+    
+    // Log unexpected errors during signup as suspicious
+    await logActivity(
+      null,
+      'guest',
+      "SUSPICIOUS - Signup Error",
+      `Suspicious activity: Error during signup for ${req.body.email}: ${err.message}. IP: ${req.ip}`,
+      req.ip
+    );
+    
     res.status(500).json({ message: "Server error" });
   }
 };

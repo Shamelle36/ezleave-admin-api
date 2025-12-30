@@ -2,9 +2,141 @@ import fs from "fs";
 import path from "path";
 import puppeteer from "puppeteer";
 import sql from "../config/db.js";
+import sharp from 'sharp';
+
+export const removeSignatureBackground = async (req, res) => {
+  // Set timeout for the entire request
+  res.setTimeout(30000, () => {
+    if (!res.headersSent) {
+      res.status(408).json({
+        message: "Request timeout - processing took too long"
+      });
+    }
+  });
+
+  try {
+    const { image } = req.body;
+
+    if (!image) {
+      return res.status(400).json({
+        message: "Image data is required"
+      });
+    }
+
+    console.log("🖼️ Processing signature background removal...");
+
+    // Validate and limit image size
+    const maxSize = 5 * 1024 * 1024; // 5MB max
+    const base64Size = Buffer.byteLength(image, 'utf8');
+    
+    if (base64Size > maxSize) {
+      console.warn(`Image too large: ${base64Size} bytes`);
+      return res.json({
+        processedImage: image,
+        message: "Image too large for processing, using original",
+        warning: "Image exceeds 5MB limit"
+      });
+    }
+
+    // Extract base64 data
+    const base64Match = image.match(/^data:image\/(\w+);base64,(.+)$/);
+    if (!base64Match) {
+      console.warn("Invalid base64 image format");
+      return res.json({
+        processedImage: image,
+        message: "Invalid image format, using original",
+        warning: "Not a valid base64 image"
+      });
+    }
+
+    const [, imageType, base64Data] = base64Match;
+    const allowedTypes = ['png', 'jpeg', 'jpg'];
+    
+    if (!allowedTypes.includes(imageType.toLowerCase())) {
+      console.warn(`Unsupported image type: ${imageType}`);
+      return res.json({
+        processedImage: image,
+        message: "Unsupported image type, using original",
+        warning: `Image type ${imageType} not supported`
+      });
+    }
+
+    const buffer = Buffer.from(base64Data, 'base64');
+    
+    // Optimize sharp operations
+    try {
+      const processedBuffer = await sharp(buffer)
+        .resize(800, 300, { // Resize to reasonable dimensions
+          fit: 'inside',
+          withoutEnlargement: true
+        })
+        .grayscale()
+        .normalise() // Better than .linear() for contrast
+        .threshold(245, { // Slightly higher threshold
+          grayscale: true
+        })
+        .png({
+          compressionLevel: 6,
+          adaptiveFiltering: true
+        })
+        .toBuffer();
+
+      const processedBase64 = processedBuffer.toString('base64');
+      const processedImage = `data:image/png;base64,${processedBase64}`;
+
+      console.log("✅ Background removed successfully");
+      
+      return res.json({
+        processedImage: processedImage,
+        message: "Signature background removed successfully"
+      });
+
+    } catch (sharpError) {
+      console.error("Sharp processing error:", sharpError);
+      // Fall back to simpler processing
+      try {
+        const simpleBuffer = await sharp(buffer)
+          .resize(800, 300, { fit: 'inside' })
+          .grayscale()
+          .png()
+          .toBuffer();
+          
+        const simpleBase64 = simpleBuffer.toString('base64');
+        const simpleImage = `data:image/png;base64,${simpleBase64}`;
+        
+        return res.json({
+          processedImage: simpleImage,
+          message: "Basic processing applied",
+          warning: "Could not fully remove background"
+        });
+      } catch (fallbackError) {
+        console.error("Fallback processing also failed:", fallbackError);
+        throw new Error("Image processing failed");
+      }
+    }
+
+  } catch (err) {
+    console.error("Error in removeSignatureBackground:", err);
+    
+    // Always return original image if provided
+    if (req.body.image) {
+      return res.json({
+        processedImage: req.body.image,
+        message: "Using original image (processing failed)",
+        warning: err.message || "Unknown error"
+      });
+    } else {
+      return res.status(400).json({
+        message: "Failed to process signature image",
+        error: err.message || "Unknown error"
+      });
+    }
+  }
+};
 
 export const generateCSForm = async (req, res) => {
   let browser;
+  let pdfBuffer;
 
   try {
     const { 
@@ -17,7 +149,8 @@ export const generateCSForm = async (req, res) => {
       user_id,
       user_data,
       signature_data,
-      signature_method
+      signature_method,
+      save_to_db = true
     } = req.body;
 
     if (!leave_application_id) {
@@ -187,23 +320,32 @@ export const generateCSForm = async (req, res) => {
     let departmentHeadFullName = "";
     let approverRow;
 
-    let displaySignature = "";
-    if (signature_method === "e-sign" && signature_data) {
-      displaySignature = signature_data;
-    } else {
-      if (requesting_role === "office_head") {
-        displaySignature = office_head_signature;
-      } else if (requesting_role === "admin") {
-        displaySignature = hr_signature;
-      } else if (requesting_role === "mayor") {
-        displaySignature = mayor_signature;
-      }
-    }
+    // In the generateCSForm function, update the signature display logic:
 
-    // ADD SEPARATE VARIABLES FOR EACH ROLE'S SIGNATURE
-    const officeHeadSignature = office_head_signature;
-    const hrSignature = hr_signature;
-    const mayorSignature = mayor_signature;
+let displaySignature = "";
+
+// Check if we have a newly uploaded signature
+if (signature_method === "upload" && signature_data) {
+  displaySignature = signature_data;
+  console.log("📤 Using uploaded signature");
+} else if (signature_method === "e-sign" && signature_data) {
+  displaySignature = signature_data;
+  console.log("✍️ Using e-signature");
+} else {
+  // Use stored signatures from database
+  if (requesting_role === "office_head") {
+    displaySignature = office_head_signature;
+  } else if (requesting_role === "admin") {
+    displaySignature = hr_signature;
+  } else if (requesting_role === "mayor") {
+    displaySignature = mayor_signature;
+  }
+}
+
+// Also update the separate role signature variables to handle uploaded signatures:
+const officeHeadSignature = signature_method === "upload" && requesting_role === "office_head" ? signature_data : office_head_signature;
+const hrSignature = signature_method === "upload" && requesting_role === "admin" ? signature_data : hr_signature;
+const mayorSignature = signature_method === "upload" && requesting_role === "mayor" ? signature_data : mayor_signature;
 
     const userId = user_id;
 
@@ -1010,10 +1152,122 @@ export const generateCSForm = async (req, res) => {
 
     await browser.close();
 
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", "inline");
-    res.setHeader("Cache-Control", "no-store");
-    res.send(pdfBuffer);
+    if (save_to_db) {
+  try {
+    console.log(`📄 Saving/updating PDF for leave application ${leave_application_id}...`);
+    
+    // Format the employee name for the filename
+    const formatEmployeeName = (lastName, firstName, middleName) => {
+      const middleInitial = middleName && middleName.trim().length > 0 
+        ? `${middleName.trim().charAt(0).toUpperCase()}.` 
+        : '';
+      return `${lastName}, ${firstName} ${middleInitial}`.trim();
+    };
+    
+    const formattedName = formatEmployeeName(last_name, first_name, middle_name);
+    const filename = `CS-Form-No6-${formattedName}.pdf`;
+    const mimetype = 'application/pdf';
+    
+    // Determine which action was taken
+    const actionTaken = action_type === 'approve' ? 'Approved' : 'Rejected';
+    const remarksText = action_remarks || 
+      (action_type === 'approve' 
+        ? `Approved with ${days_with_pay || 0} days with pay` 
+        : 'Rejected');
+    
+    // First, update the main leave_applications table
+    await sql`
+      UPDATE leave_applications 
+      SET 
+        cs_form_pdf = ${pdfBuffer},
+        cs_form_filename = ${filename},
+        cs_form_mimetype = ${mimetype},
+        cs_form_generated_at = NOW(),
+        cs_form_generated = true,
+        updated_at = NOW()
+      WHERE id = ${leave_application_id}
+    `;
+    
+    console.log(`✅ Main leave_applications table updated for ID ${leave_application_id}`);
+    
+    // Check if there's an existing PDF document for this application
+    const existingPDFs = await sql`
+      SELECT id, version 
+      FROM leave_pdf_documents 
+      WHERE leave_application_id = ${leave_application_id}
+      ORDER BY version DESC 
+      LIMIT 1
+    `;
+    
+    if (existingPDFs.length > 0) {
+      // UPDATE existing record (instead of creating new one)
+      const existingId = existingPDFs[0].id;
+      await sql`
+        UPDATE leave_pdf_documents 
+        SET 
+          pdf_data = ${pdfBuffer},
+          pdf_filename = ${filename},
+          pdf_mimetype = ${mimetype},
+          generated_by = ${user_data?.full_name || 'Unknown'},
+          signature_method = ${signature_method || null},
+          signature_data = ${signature_data || null},
+          updated_at = NOW()
+        WHERE id = ${existingId}
+      `;
+      
+      console.log(`✅ Existing PDF record ${existingId} updated`);
+    } else {
+      // INSERT new record if none exists
+      const pdfVersion = await sql`
+        INSERT INTO leave_pdf_documents (
+          leave_application_id,
+          pdf_data,
+          pdf_filename,
+          pdf_mimetype,
+          generated_by,
+          signature_method,
+          signature_data,
+          version,
+          created_at,
+          updated_at
+        ) VALUES (
+          ${leave_application_id},
+          ${pdfBuffer},
+          ${filename},
+          ${mimetype},
+          ${user_data?.full_name || 'Unknown'},
+          ${signature_method || null},
+          ${signature_data || null},
+          1,
+          NOW(),
+          NOW()
+        ) RETURNING id
+      `;
+      
+      console.log(`✅ New PDF record created with ID ${pdfVersion[0]?.id}`);
+    }
+    
+  } catch (dbError) {
+    console.error("❌ Error saving PDF to database:", dbError);
+  }
+}
+
+// Return the PDF
+res.setHeader("Content-Type", "application/pdf");
+
+// Format function for download filename
+const formatForDownload = (lastName, firstName, middleName) => {
+  const middleInitial = middleName && middleName.trim().length > 0 
+    ? `${middleName.trim().charAt(0).toUpperCase()}.` 
+    : '';
+  return `${lastName}, ${firstName} ${middleInitial}`.trim();
+};
+
+const downloadFilename = `CS-Form-No6-${formatForDownload(last_name, first_name, middle_name)}.pdf`;
+
+res.setHeader("Content-Disposition", `inline; filename="${downloadFilename}"`);
+res.setHeader("Cache-Control", "no-store");
+res.send(pdfBuffer);
 
   } catch (err) {
     console.error("CS Form generation error:", err);
@@ -1097,3 +1351,52 @@ export const saveSignature = async (req, res) => {
     });
   }
 };
+
+// Get all PDFs for a leave application
+export async function getLeavePDFs(req, res) {
+  try {
+    const { leave_application_id } = req.params;
+
+    const pdfs = await sql`
+      SELECT 
+        id,
+        pdf_filename,
+        generated_by,
+        generated_at,
+        signature_method,
+        version
+      FROM leave_pdf_documents
+      WHERE leave_application_id = ${leave_application_id}
+      ORDER BY generated_at DESC
+    `;
+
+    res.json(pdfs);
+  } catch (error) {
+    console.error('❌ Error fetching PDFs:', error);
+    res.status(500).json({ error: 'Failed to fetch PDFs' });
+  }
+}
+
+export async function downloadPDF(req, res) {
+  try {
+    const { pdf_id } = req.params;
+
+    const [pdf] = await sql`
+      SELECT pdf_data, pdf_filename
+      FROM leave_pdf_documents
+      WHERE id = ${pdf_id}
+    `;
+
+    if (!pdf) {
+      return res.status(404).json({ error: 'PDF not found' });
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${pdf.pdf_filename}"`);
+    res.send(pdf.pdf_data);
+
+  } catch (error) {
+    console.error('❌ Error downloading PDF:', error);
+    res.status(500).json({ error: 'Failed to download PDF' });
+  }
+}

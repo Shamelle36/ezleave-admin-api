@@ -16,6 +16,7 @@ import csFormRoutes from "./routes/csFormRoutes.js";
 import termsRoutes from "./routes/termsRoute.js";
 import pushRoutes from "./routes/pushRoutes.js";
 import adminMessagesRoute from "./routes/adminMessagesRoute.js";
+import holidaysRoutes from './routes/holidaysRoute.js';
 import './cron.js';
 import path from "path";
 import { setupWebSocketServer } from "./websocket.js";
@@ -24,6 +25,7 @@ import http from "http";
 dotenv.config();
 const app = express();
 
+
 // Create HTTP server
 const server = http.createServer(app);
 
@@ -31,7 +33,7 @@ const server = http.createServer(app);
 setupWebSocketServer(server);
 
 app.use(cors({
-  origin: ["http://localhost:3000", "http://localhost:3001", "http://10.242.224.105:3001"],
+  origin: ["http://localhost:3000", "http://localhost:3001", "http://10.115.128.197:3001"],
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   credentials: true
 }));
@@ -54,6 +56,7 @@ app.use("/api", csFormRoutes);
 app.use("/api/terms", termsRoutes);
 app.use("/api/push", pushRoutes);
 app.use("/api/admin/messages", adminMessagesRoute);
+app.use('/api/holidays', holidaysRoutes);
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
