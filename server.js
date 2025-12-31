@@ -33,7 +33,7 @@ const server = http.createServer(app);
 setupWebSocketServer(server);
 
 app.use(cors({
-  origin: ["http://localhost:3000", "http://localhost:3001", "http://10.115.128.197:3001"],
+  origin: ["http://localhost:3000", "http://localhost:3001", "http://10.115.128.197:3001", "https://ezleave-admin.onrender.com"],
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   credentials: true
 }));
