@@ -110,7 +110,13 @@ export async function login(req, res) {
 
     res.json({
       message: "Login successful",
-      user: { id: user.id, email: user.email, role: user.role },
+      token: null, // keep consistent
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        department: null
+      }
     });
   } catch (error) {
     console.error(error);
