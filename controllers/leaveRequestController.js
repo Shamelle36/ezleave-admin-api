@@ -243,7 +243,10 @@ export async function getLeaveRequests(req, res) {
         lr.leave_type,
         lr.details,
         TO_CHAR(lower(lr.inclusive_dates), 'FMMonth DD, YYYY') AS inclusive_date_start,
-        TO_CHAR(upper(lr.inclusive_dates), 'FMMonth DD, YYYY') AS inclusive_date_end,
+        TO_CHAR(
+          (upper(lr.inclusive_dates) - INTERVAL '1 day'),
+          'FMMonth DD, YYYY'
+        ) AS inclusive_date_end,
         lr.inclusive_dates,
         lr.number_of_days,
         lr.commutation_requested,
