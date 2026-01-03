@@ -1,5 +1,5 @@
 import sql from "../config/db.js";
-import { sendToUser } from "../websocket.js";
+import { sendToUser } from "../socket.js";
 /**
  * ✅ Helper function to create admin_messages table if it doesn't exist
  */
