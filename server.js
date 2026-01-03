@@ -19,7 +19,6 @@ import adminMessagesRoute from "./routes/adminMessagesRoute.js";
 import holidaysRoutes from './routes/holidaysRoute.js';
 import './cron.js';
 import path from "path";
-import { setupSocketServer } from "./socket.js";
 import http from "http";
 
 dotenv.config();
@@ -30,7 +29,6 @@ const app = express();
 const server = http.createServer(app);
 
 // Setup WebSocket server
-setupSocketServer(server);
 
 app.use(cors({
   origin: "*",

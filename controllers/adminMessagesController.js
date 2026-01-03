@@ -1,5 +1,5 @@
 import sql from "../config/db.js";
-import { sendToUser } from "../socket.js";
+
 /**
  * ✅ Helper function to create admin_messages table if it doesn't exist
  */
@@ -16,7 +16,8 @@ async function createAdminMessagesTable() {
         time TIMESTAMP DEFAULT NOW(),
         pinned BOOLEAN DEFAULT FALSE,
         read_status BOOLEAN DEFAULT FALSE,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        firebase_id VARCHAR(255) DEFAULT NULL
       );
     `;
 
@@ -204,6 +205,7 @@ export async function getAdminConversation(req, res) {
         m.time,
         m.pinned,
         m.read_status,
+        m.firebase_id,
         -- Get sender info based on type
         CASE 
           WHEN m.sender_type = 'user' THEN (
@@ -284,6 +286,7 @@ export async function getAdminMessages(req, res) {
         m.time,
         m.pinned,
         m.read_status,
+        m.firebase_id,
         -- Get sender info based on type
         CASE 
           WHEN m.sender_type = 'user' THEN (
@@ -442,7 +445,9 @@ export async function sendAdminMessage(req, res) {
       sender_type, 
       receiver_id, 
       receiver_type, 
-      message 
+      message,
+      firebaseId, // Optional: Firebase message ID for syncing
+      timestamp // Optional: Firebase timestamp for syncing
     } = req.body;
 
     // Validate required fields
@@ -570,7 +575,9 @@ export async function sendAdminMessage(req, res) {
       receiverIdentifier,
       sender_type,
       receiver_type,
-      message_length: message.length
+      message_length: message.length,
+      firebaseId,
+      timestamp
     });
 
     // Insert message into admin_messages table
@@ -583,16 +590,18 @@ export async function sendAdminMessage(req, res) {
         message, 
         time, 
         pinned, 
-        read_status
+        read_status,
+        firebase_id
       ) VALUES (
         ${senderIdentifier},
         ${sender_type},
         ${receiverIdentifier},
         ${receiver_type},
         ${message},
-        NOW(),
+        ${timestamp ? sql`TO_TIMESTAMP(${timestamp} / 1000.0)` : sql`NOW()`},
         false,
-        false
+        false,
+        ${firebaseId || null}
       ) RETURNING *;
     `;
 
@@ -718,47 +727,23 @@ export async function sendAdminMessage(req, res) {
       // Don't fail the whole request if notification fails
     }
 
-   // In your sendAdminMessage function, update the WebSocket sending part:
+    // Prepare message data for response
+    const messageData = {
+      id: result[0].id,
+      sender_id: senderIdentifier,
+      sender_type: sender_type,
+      receiver_id: receiverIdentifier,
+      receiver_type: receiver_type,
+      message: message,
+      time: result[0].time,
+      sender_name: senderName,
+      receiver_name: receiverName,
+      pinned: false,
+      read_status: false,
+      delivered: true,
+      firebase_id: firebaseId || null
+    };
 
-// ✅ Prepare message data for WebSocket
-const messageData = {
-  id: result[0].id,
-  sender_id: senderIdentifier,
-  sender_type: sender_type,
-  receiver_id: receiverIdentifier,
-  receiver_type: receiver_type,
-  message: message,
-  time: result[0].time,
-  sender_name: senderName,
-  receiver_name: receiverName,
-  pinned: false,
-  read_status: false,
-  delivered: true
-};
-
-// ✅ SEND VIA WEBSOCKET - FIXED STRUCTURE
-const receiverSent = sendToUser(receiver_id, receiver_type, {
-  type: 'new_message',
-  message: messageData,
-  timestamp: new Date().toISOString()
-});
-
-console.log(`📤 WebSocket delivery to ${receiver_id} (${receiver_type}): ${receiverSent ? 'SUCCESS' : 'FAILED - User offline'}`);
-
-// ✅ Also send to sender for confirmation
-sendToUser(sender_id, sender_type, {
-  type: 'message_sent',
-  message: {
-    id: result[0].id,
-    messageId: result[0].id,
-    timestamp: result[0].time,
-    receiverName: receiverName,
-    delivered: receiverSent
-  },
-  timestamp: new Date().toISOString()
-});
-
-    console.log(`📤 WebSocket attempted: ${receiverSent ? 'Sent' : 'User offline'}`);
     console.log(`📨 Full message data:`, messageData);
 
     // Also check if notification was inserted by querying it
@@ -785,8 +770,7 @@ sendToUser(sender_id, sender_type, {
       data: messageData,
       notification_sent: true,
       push_notification_sent: true,
-      reply_supported: true, // Indicate reply is supported
-      websocket_delivered: receiverSent
+      reply_supported: true // Indicate reply is supported
     });
 
   } catch (error) {
@@ -974,24 +958,6 @@ export async function handleNotificationReply(req, res) {
     } catch (pushError) {
       console.warn("⚠️ Could not send reply notification:", pushError.message);
     }
-
-    // Send WebSocket notification if original sender is online
-    sendToUser(originalSenderId, originalSenderType, {
-      type: 'new_message',
-      message: {
-        id: result[0].id,
-        sender_id: replierIdentifier,
-        sender_type: replierType,
-        receiver_id: originalSenderIdentifier,
-        receiver_type: originalSenderType,
-        message: replyText,
-        time: result[0].time,
-        sender_name: replierName,
-        receiver_name: senderName, // Original sender's name
-        pinned: false,
-        read_status: false
-      }
-    });
 
     res.status(201).json({ 
       success: true, 
