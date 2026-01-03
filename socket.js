@@ -1,3 +1,4 @@
+// socket.js
 import { Server } from "socket.io";
 
 /**
@@ -18,7 +19,9 @@ export const setupSocketServer = (httpServer) => {
       origin: "*",
       methods: ["GET", "POST"],
     },
-    transports: ["websocket"],
+    transports: ["websocket", "polling"], // Add polling as fallback
+    pingTimeout: 60000,
+    pingInterval: 25000,
   });
 
   io.on("connection", (socket) => {
@@ -26,7 +29,6 @@ export const setupSocketServer = (httpServer) => {
 
     /**
      * ✅ REGISTER USER
-     * replaces ws query parsing
      */
     socket.on("register", ({ userId, userType }) => {
       if (!userId || !userType) {
@@ -45,6 +47,8 @@ export const setupSocketServer = (httpServer) => {
       }
 
       socket.join(clientId);
+      socket.join(`user:${userId}`); // Join user-specific room
+      socket.join(`type:${userType}`); // Join type-specific room
 
       clients.set(clientId, {
         socketId: socket.id,
@@ -65,13 +69,77 @@ export const setupSocketServer = (httpServer) => {
         timestamp: new Date().toISOString(),
       });
 
+      // Notify others about online status
       broadcastOnlineStatus(userId, userType, true);
+    });
+
+    /**
+     * ✉️ SEND MESSAGE - NEW EVENT HANDLER
+     */
+    socket.on("send_message", async (data) => {
+      console.log("📤 Received send_message event:", data);
+      
+      const senderEntry = [...clients.entries()].find(
+        ([_, c]) => c.socketId === socket.id
+      );
+
+      if (!senderEntry) {
+        console.log("❌ Sender not found in connected clients");
+        return;
+      }
+
+      const [senderClientId, senderInfo] = senderEntry;
+      const [senderType, senderId] = senderClientId.split(":");
+      
+      const { receiverId, receiverType, message, tempId } = data;
+      
+      if (!receiverId || !receiverType || !message) {
+        console.log("❌ Missing receiver info or message");
+        return;
+      }
+
+      const receiverKey = `${receiverType}:${receiverId}`;
+      
+      // Forward message to receiver if online
+      if (clients.has(receiverKey)) {
+        console.log(`📨 Forwarding message to ${receiverKey}`);
+        
+        io.to(receiverKey).emit("message", {
+          type: "new_message",
+          message: {
+            id: tempId || Date.now(),
+            sender_id: senderClientId,
+            sender_type: senderType,
+            receiver_id: receiverKey,
+            receiver_type: receiverType,
+            message: message,
+            time: new Date().toISOString(),
+            pinned: false,
+            read_status: false,
+            sender_name: senderInfo.userId, // You might want to get actual name
+            delivered: true
+          },
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        console.log(`❌ Receiver ${receiverKey} is offline, message will be delivered via API`);
+      }
+
+      // Send confirmation to sender
+      socket.emit("message", {
+        type: "message_sent",
+        tempId,
+        message: "Message delivered via WebSocket",
+        timestamp: new Date().toISOString(),
+      });
     });
 
     /**
      * ✉️ INCOMING SOCKET EVENTS
      */
     socket.on("message", async (data) => {
+      console.log("📥 Received message event:", data);
+      
       if (!data?.type) return;
 
       const senderEntry = [...clients.entries()].find(
@@ -90,10 +158,6 @@ export const setupSocketServer = (httpServer) => {
           handleMessagesRead(data, senderClientId);
           break;
 
-        case "new_message":
-          await handleNewMessage(data, senderClientId);
-          break;
-
         case "ping":
           socket.emit("message", { type: "pong" });
           break;
@@ -103,36 +167,49 @@ export const setupSocketServer = (httpServer) => {
     /**
      * 🔌 DISCONNECT
      */
-    socket.on("disconnect", () => {
+    socket.on("disconnect", (reason) => {
+      console.log(`🔴 Socket disconnected: ${socket.id}, Reason: ${reason}`);
+      
       for (const [clientId, client] of clients.entries()) {
         if (client.socketId === socket.id) {
-          console.log(`🔴 Disconnected: ${clientId}`);
+          console.log(`🔴 Removing from clients: ${clientId}`);
           broadcastOnlineStatus(client.userId, client.userType, false);
           clients.delete(clientId);
           break;
         }
       }
     });
+
+    socket.on("error", (error) => {
+      console.error("❌ Socket error:", error);
+    });
   });
 
   console.log("🚀 Socket.IO server running");
+  return io;
 };
 
 /**
- * ✅ Send message to a single user
+ * ✅ Send message to a single user - UPDATED
  */
 export const sendToUser = (userId, userType, payload) => {
-  if (!io) return false;
-
-  const clientId = `${userType}:${userId}`;
-  const client = clients.get(clientId);
-
-  if (!client) {
-    console.log(`❌ User offline: ${clientId}`);
+  if (!io) {
+    console.log("❌ Socket.IO not initialized");
     return false;
   }
 
+  const clientId = `${userType}:${userId}`;
+  console.log(`📤 Attempting to send to ${clientId}`, payload);
+
+  // Check if user is connected
+  if (!clients.has(clientId)) {
+    console.log(`❌ User ${clientId} is not connected`);
+    return false;
+  }
+
+  // Send to specific user room
   io.to(clientId).emit("message", payload);
+  console.log(`✅ Message sent to ${clientId}`);
   return true;
 };
 
@@ -149,6 +226,7 @@ export const sendToUsers = (userList, payload) => {
       : failCount++;
   });
 
+  console.log(`📤 Sent to ${successCount} users, failed for ${failCount}`);
   return { successCount, failCount };
 };
 
@@ -172,55 +250,47 @@ const broadcastOnlineStatus = (userId, userType, isOnline) => {
     timestamp: new Date().toISOString(),
   };
 
-  clients.forEach((_, clientId) => {
-    if (clientId !== `${userType}:${userId}`) {
-      io.to(clientId).emit("message", statusPayload);
-    }
-  });
+  // Emit to all connected clients except the user
+  io.emit("message", statusPayload);
+  
+  console.log(`🌐 ${userId} (${userType}) is now ${isOnline ? 'online' : 'offline'}`);
 };
 
 /**
  * ⌨️ Typing Indicator
  */
 const handleTyping = ({ receiverId, receiverType, isTyping }, senderId) => {
+  console.log(`⌨️ Typing from ${senderId} to ${receiverType}:${receiverId}`);
+  
   const receiverKey = `${receiverType}:${receiverId}`;
-
-  io.to(receiverKey).emit("message", {
-    type: "typing",
-    senderId: senderId.split(":")[1],
-    senderType: senderId.split(":")[0],
-    isTyping,
-    timestamp: new Date().toISOString(),
-  });
+  
+  if (clients.has(receiverKey)) {
+    io.to(receiverKey).emit("message", {
+      type: "typing",
+      senderId: senderId.split(":")[1],
+      senderType: senderId.split(":")[0],
+      isTyping,
+      timestamp: new Date().toISOString(),
+    });
+  }
 };
 
 /**
  * 📖 Read Receipts
  */
 const handleMessagesRead = ({ senderId, senderType }, readerId) => {
+  console.log(`📖 Read receipt from ${readerId} to ${senderType}:${senderId}`);
+  
   const contactKey = `${senderType}:${senderId}`;
-
-  io.to(contactKey).emit("message", {
-    type: "message_read",
-    senderId: readerId.split(":")[1],
-    senderType: readerId.split(":")[0],
-    timestamp: new Date().toISOString(),
-  });
-};
-
-/**
- * ✉️ Forward message
- */
-const handleNewMessage = async ({ receiverId, receiverType, message }, senderId) => {
-  const receiverKey = `${receiverType}:${receiverId}`;
-
-  io.to(receiverKey).emit("message", {
-    type: "new_message",
-    message,
-    senderId: senderId.split(":")[1],
-    senderType: senderId.split(":")[0],
-    timestamp: new Date().toISOString(),
-  });
+  
+  if (clients.has(contactKey)) {
+    io.to(contactKey).emit("message", {
+      type: "message_read",
+      readerId: readerId.split(":")[1],
+      readerType: readerId.split(":")[0],
+      timestamp: new Date().toISOString(),
+    });
+  }
 };
 
 /**
@@ -236,8 +306,11 @@ export const getConnectedClients = () =>
     ip: c.ip,
   }));
 
-export const isUserOnline = (userId, userType) =>
-  clients.has(`${userType}:${userId}`);
+export const isUserOnline = (userId, userType) => {
+  const isOnline = clients.has(`${userType}:${userId}`);
+  console.log(`🔍 Check online status for ${userType}:${userId}: ${isOnline ? 'Online' : 'Offline'}`);
+  return isOnline;
+};
 
 export default {
   setupSocketServer,

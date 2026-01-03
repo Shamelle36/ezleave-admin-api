@@ -718,59 +718,45 @@ export async function sendAdminMessage(req, res) {
       // Don't fail the whole request if notification fails
     }
 
-    // ✅ Prepare message data for WebSocket
-    const messageData = {
-      id: result[0].id,
-      sender_id: senderIdentifier,
-      sender_type: sender_type,
-      receiver_id: receiverIdentifier,
-      receiver_type: receiver_type,
-      message: message,
-      time: result[0].time,
-      sender_name: senderName,
-      receiver_name: receiverName,
-      pinned: false,
-      read_status: false
-    };
+   // In your sendAdminMessage function, update the WebSocket sending part:
 
-    // ✅ TRY TO SEND VIA WEBSOCKET (user might be online later)
-    const receiverSent = sendToUser(receiver_id, receiver_type, {
-      type: 'new_message',
-      message: messageData,
-      notification: {
-        message: notificationMessage,
-        timestamp: new Date().toISOString(),
-        from: senderName,
-        replySupported: true, // Indicate reply is supported
-        senderId: sender_id,
-        senderType: sender_type
-      }
-    });
+// ✅ Prepare message data for WebSocket
+const messageData = {
+  id: result[0].id,
+  sender_id: senderIdentifier,
+  sender_type: sender_type,
+  receiver_id: receiverIdentifier,
+  receiver_type: receiver_type,
+  message: message,
+  time: result[0].time,
+  sender_name: senderName,
+  receiver_name: receiverName,
+  pinned: false,
+  read_status: false,
+  delivered: true
+};
 
-    // ✅ Send notification via WebSocket (if user is online)
-    sendToUser(receiver_id, receiver_type, {
-      type: 'new_notification',
-      notification: {
-        message: notificationMessage,
-        timestamp: new Date().toISOString(),
-        from: senderName,
-        messageId: result[0].id,
-        replySupported: true,
-        senderId: sender_id,
-        senderType: sender_type
-      }
-    });
+// ✅ SEND VIA WEBSOCKET - FIXED STRUCTURE
+const receiverSent = sendToUser(receiver_id, receiver_type, {
+  type: 'new_message',
+  message: messageData,
+  timestamp: new Date().toISOString()
+});
 
-    // ✅ Send confirmation to sender
-    sendToUser(sender_id, sender_type, {
-      type: 'message_sent',
-      message: {
-        id: result[0].id,
-        messageId: result[0].id,
-        timestamp: result[0].time,
-        receiverName: receiverName
-      }
-    });
+console.log(`📤 WebSocket delivery to ${receiver_id} (${receiver_type}): ${receiverSent ? 'SUCCESS' : 'FAILED - User offline'}`);
+
+// ✅ Also send to sender for confirmation
+sendToUser(sender_id, sender_type, {
+  type: 'message_sent',
+  message: {
+    id: result[0].id,
+    messageId: result[0].id,
+    timestamp: result[0].time,
+    receiverName: receiverName,
+    delivered: receiverSent
+  },
+  timestamp: new Date().toISOString()
+});
 
     console.log(`📤 WebSocket attempted: ${receiverSent ? 'Sent' : 'User offline'}`);
     console.log(`📨 Full message data:`, messageData);
