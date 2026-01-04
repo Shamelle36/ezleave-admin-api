@@ -210,6 +210,9 @@ export const updateAdminProfile = async (req, res) => {
   }
 };
 
+// ==============================
+// 🔵 Google Login Function (Only checks existing users)
+// ==============================
 export const googleLogin = async (req, res) => {
   try {
     const { credential } = req.body;
@@ -224,40 +227,32 @@ export const googleLogin = async (req, res) => {
 
     console.log(`🔵 Google login attempt: ${email} from IP: ${req.ip}`);
 
-    // Check if user exists
-    let user = await findUserByEmail(email);
+    // Check if user exists - ONLY CHECK, DON'T CREATE
+    const user = await findUserByEmail(email);
 
     if (!user) {
-      // Create new user with random password
-      const randomPassword = Math.random().toString(36).slice(-16) + Math.random().toString(36).slice(-16);
-      const hashedPassword = await bcrypt.hash(randomPassword, 10);
-      
-      const newUser = await sql`
-        INSERT INTO useradmin (email, full_name, password, role, profile_picture)
-        VALUES (${email}, ${name || email.split('@')[0]}, ${hashedPassword}, 'admin', ${picture || null})
-        RETURNING id, email, full_name, role, profile_picture
-      `;
-      
-      user = newUser[0];
-      
-      // Log Google signup
+      // User doesn't exist - log failed attempt
       await logActivity(
-        user.id,
-        user.role,
-        "Google Signup",
-        `Admin ${email} registered via Google OAuth`,
+        null,
+        'guest',
+        "Failed Google Login",
+        `Google account ${email} not found in system`,
         req.ip
       );
-    } else {
-      // Log Google login
-      await logActivity(
-        user.id,
-        user.role,
-        "Google Login",
-        "Successful login via Google OAuth",
-        req.ip
-      );
+      
+      return res.status(401).json({ 
+        message: "Google account not registered. Please sign up first or use existing admin account." 
+      });
     }
+
+    // User exists - log successful Google login
+    await logActivity(
+      user.id,
+      user.role,
+      "Google Login",
+      "Successful login via Google OAuth",
+      req.ip
+    );
 
     // Return user data (no token since your system doesn't use JWT)
     res.json({
@@ -268,7 +263,7 @@ export const googleLogin = async (req, res) => {
         email: user.email,
         role: user.role,
         full_name: user.full_name,
-        profile_picture: user.profile_picture,
+        profile_picture: user.profile_picture || picture, // Use Google picture if user doesn't have one
       }
     });
 
