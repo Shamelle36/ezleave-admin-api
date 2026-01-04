@@ -209,3 +209,81 @@ export const updateAdminProfile = async (req, res) => {
     });
   }
 };
+
+export const googleLogin = async (req, res) => {
+  try {
+    const { credential } = req.body;
+    
+    if (!credential) {
+      return res.status(400).json({ message: "No Google credential provided" });
+    }
+
+    // Simple decode of JWT token from Google
+    const payload = JSON.parse(Buffer.from(credential.split('.')[1], 'base64').toString());
+    const { email, name, picture } = payload;
+
+    console.log(`🔵 Google login attempt: ${email} from IP: ${req.ip}`);
+
+    // Check if user exists
+    let user = await findUserByEmail(email);
+
+    if (!user) {
+      // Create new user with random password
+      const randomPassword = Math.random().toString(36).slice(-16) + Math.random().toString(36).slice(-16);
+      const hashedPassword = await bcrypt.hash(randomPassword, 10);
+      
+      const newUser = await sql`
+        INSERT INTO useradmin (email, full_name, password, role, profile_picture)
+        VALUES (${email}, ${name || email.split('@')[0]}, ${hashedPassword}, 'admin', ${picture || null})
+        RETURNING id, email, full_name, role, profile_picture
+      `;
+      
+      user = newUser[0];
+      
+      // Log Google signup
+      await logActivity(
+        user.id,
+        user.role,
+        "Google Signup",
+        `Admin ${email} registered via Google OAuth`,
+        req.ip
+      );
+    } else {
+      // Log Google login
+      await logActivity(
+        user.id,
+        user.role,
+        "Google Login",
+        "Successful login via Google OAuth",
+        req.ip
+      );
+    }
+
+    // Return user data (no token since your system doesn't use JWT)
+    res.json({
+      message: "Google login successful",
+      token: null, // Consistent with your existing login
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        full_name: user.full_name,
+        profile_picture: user.profile_picture,
+      }
+    });
+
+  } catch (error) {
+    console.error("❌ Google login error:", error);
+    
+    // Log the error
+    await logActivity(
+      null,
+      'guest',
+      "Google Login Error",
+      `Failed Google login attempt: ${error.message}`,
+      req.ip
+    );
+    
+    res.status(401).json({ message: "Google authentication failed" });
+  }
+};
