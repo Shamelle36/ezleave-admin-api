@@ -238,3 +238,63 @@ export const updateProfile = async (req, res) => {
   }
 };
 
+export const googleLogin = async (req, res) => {
+  try {
+    const { credential } = req.body;
+    
+    if (!credential) {
+      return res.status(400).json({ message: "No Google credential provided" });
+    }
+
+    // Decode JWT token from Google
+    const payload = JSON.parse(Buffer.from(credential.split('.')[1], 'base64').toString());
+    const { email, name, picture } = payload;
+
+    console.log(`🔵 Google login attempt (Office): ${email} from IP: ${req.ip}`);
+
+    // Check if user exists in admin_accounts table
+    const users = await sql`
+      SELECT * FROM admin_accounts WHERE email = ${email}
+    `;
+    const user = users[0];
+
+    if (!user) {
+      // User doesn't exist - don't create new account
+      return res.status(401).json({ 
+        message: "Google account not registered. Please sign in with your department credentials or contact admin." 
+      });
+    }
+
+    if (!user.password_hash) {
+      return res.status(400).json({ 
+        message: "Account not fully set up. Please check your email for setup link." 
+      });
+    }
+
+    // Log successful Google login
+    console.log(`✅ Google login successful for office user: ${email}, Role: ${user.role}`);
+
+    // Generate JWT token
+    const token = generateToken(user);
+
+    res.json({
+      message: "Google login successful",
+      token,
+      user: {
+        id: user.id,
+        full_name: user.full_name,
+        email: user.email,
+        role: user.role,
+        department: user.department,
+        profile_picture: user.profile_picture || picture, // Use Google picture if user doesn't have one
+      },
+    });
+
+  } catch (error) {
+    console.error("❌ Google login error:", error);
+    
+    res.status(401).json({ 
+      message: error.response?.data?.message || "Google authentication failed" 
+    });
+  }
+};

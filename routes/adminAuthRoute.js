@@ -7,6 +7,7 @@ import {
   fetchAccounts,
   getUserById,
   updateProfile,
+  googleLogin
 } from "../controllers/adminAuthController.js";
 
 const router = express.Router();
@@ -24,5 +25,7 @@ router.post("/login", login);
 router.get("/user/:id", getUserById);
 
 router.put("/update/:id", updateProfile); 
+
+router.post("/google-login", googleLogin);
 
 export default router;
