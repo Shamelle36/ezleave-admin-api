@@ -74,7 +74,6 @@ export const addEmployee = async (req, res) => {
         { type: "SOLO", days: 7 },
         { type: "VAWC", days: 10 },
         { type: "RL", days: 0 },
-        { type: "MCW", days: 60 },
         { type: "STUDY", days: 180 },
         { type: "CALAMITY", days: 5 },
         { type: "MOL", days: 0 },
@@ -103,6 +102,7 @@ export const addEmployee = async (req, res) => {
       }
 
       // Female-only leave
+      // Female-only leaves
       if (gender === "Female") {
         await sql`
           INSERT INTO leave_entitlements (
@@ -111,16 +111,13 @@ export const addEmployee = async (req, res) => {
             year,
             total_days,
             used_days
-          ) VALUES (
-            ${employee.id},
-            'MAT',
-            ${year},
-            105,
-            0
-          )
+          ) VALUES
+            (${employee.id}, 'MAT', ${year}, 105, 0),
+            (${employee.id}, 'MCW', ${year}, 60, 0)
           ON CONFLICT (user_id, leave_type, year) DO NOTHING;
         `;
       }
+
 
       // Male-only leave
       if (gender === "Male" && civil_status === "Married") {
