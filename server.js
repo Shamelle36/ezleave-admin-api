@@ -17,6 +17,7 @@ import termsRoutes from "./routes/termsRoute.js";
 import pushRoutes from "./routes/pushRoutes.js";
 import adminMessagesRoute from "./routes/adminMessagesRoute.js";
 import holidaysRoutes from './routes/holidaysRoute.js';
+import testRoute from './routes/testRoute.js';
 import './cron.js';
 import path from "path";
 import http from "http";
@@ -55,6 +56,8 @@ app.use("/api/terms", termsRoutes);
 app.use("/api/push", pushRoutes);
 app.use("/api/admin/messages", adminMessagesRoute);
 app.use('/api/holidays', holidaysRoutes);
+
+app.use("/api", testRoute);
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));

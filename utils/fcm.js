@@ -326,7 +326,7 @@ export async function sendPushNotification(token, title, body, data = {}) {
 // DIRECT TEST FUNCTION
 // ======================
 export async function testExpoPush() {
-  const expoToken = "ExponentPushToken[_oKEVhIYhpKGKrrJi6rSeZ]"; // Your token
+  const expoToken = "ExponentPushToken[u-0ZRkFJ97JSDVrTOY1NHh]"; // Your token
   
   console.log("\n🧪 Testing Expo push service...");
   console.log("==================================");
