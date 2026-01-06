@@ -298,3 +298,59 @@ export const googleLogin = async (req, res) => {
     });
   }
 };
+
+// 🟢 6. Update admin account (for admin to edit other accounts)
+export const updateAccount = async (req, res) => {
+  console.log("=== UPDATE ADMIN ACCOUNT REQUEST ===");
+  console.log("Params:", req.params);
+  console.log("Body:", req.body);
+
+  const { id } = req.params;
+  const { full_name, email, role, department } = req.body;
+
+  try {
+    // Validate required fields
+    if (!full_name || !email) {
+      return res.status(400).json({ message: "Full name and email are required." });
+    }
+
+    // Check if email already exists (excluding current user)
+    const existing = await sql`
+      SELECT * FROM admin_accounts 
+      WHERE email = ${email} AND id != ${id}
+    `;
+
+    if (existing.length > 0) {
+      return res.status(400).json({ message: "Email already exists for another account." });
+    }
+
+    // Normalize role if provided
+    const normalizedRole = role ? role.toLowerCase().replace(" ", "_") : null;
+
+    // Prepare updates
+    const updates = {
+      full_name,
+      email
+    };
+    
+    if (normalizedRole) updates.role = normalizedRole;
+    if (department !== undefined) updates.department = department;
+
+    // Update the account
+    await sql`
+      UPDATE admin_accounts
+      SET ${sql(updates)}
+      WHERE id = ${id}
+      RETURNING id, full_name, email, role, department
+    `;
+
+    console.log(`✅ Account ${id} updated successfully`);
+    res.json({ 
+      message: "✅ Account updated successfully!",
+      account: updates
+    });
+  } catch (err) {
+    console.error("❌ Error updating account:", err);
+    res.status(500).json({ message: "Failed to update account." });
+  }
+};
