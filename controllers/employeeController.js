@@ -15,7 +15,9 @@ export const addEmployee = async (req, res) => {
       status, 
       date_hired, 
       gender, 
-      employment_status 
+      employment_status,
+      contract_start_date,
+      contract_end_date
     } = req.body;
 
     // Convert empty id_number and email to null
@@ -30,6 +32,45 @@ export const addEmployee = async (req, res) => {
       date_hired = parsedDate.toISOString().split('T')[0]; // format as YYYY-MM-DD
     }
 
+    // ✅ Declare eligibleStatuses ONCE
+    const eligibleStatuses = ["Temporary", "Permanent", "Contractual", "Casual", "Coterminous"];
+
+    // Contract validation
+    let contractStart = null;
+    let contractEnd = null;
+
+    if (eligibleStatuses.includes(employment_status)) {
+      if (!contract_start_date || !contract_end_date) {
+        return res.status(400).json({
+          error: "Contract start and end dates are required for this employment status"
+        });
+      }
+
+      contractStart = new Date(contract_start_date);
+      contractEnd = new Date(contract_end_date);
+      const hiredDate = new Date(date_hired);
+
+      if (isNaN(contractStart) || isNaN(contractEnd)) {
+        return res.status(400).json({ error: "Invalid contract dates" });
+      }
+
+      if (contractStart < hiredDate) {
+        return res.status(400).json({
+          error: "Contract start date cannot be before date hired"
+        });
+      }
+
+      if (contractEnd <= contractStart) {
+        return res.status(400).json({
+          error: "Contract end date must be after contract start date"
+        });
+      }
+
+      contractStart = contractStart.toISOString().split("T")[0];
+      contractEnd = contractEnd.toISOString().split("T")[0];
+    }
+
+    // INSERT employee with contractStart / contractEnd
     const [employee] = await sql`
       INSERT INTO employee_list (
         first_name, 
@@ -43,7 +84,9 @@ export const addEmployee = async (req, res) => {
         status, 
         date_hired,
         gender,
-        employment_status
+        employment_status,
+        contract_start_date,
+        contract_end_date
       ) VALUES (
         ${first_name}, 
         ${last_name}, 
@@ -56,14 +99,15 @@ export const addEmployee = async (req, res) => {
         ${status}, 
         ${date_hired},
         ${gender},
-        ${employment_status}
+        ${employment_status},
+        ${contractStart},
+        ${contractEnd}
       )
       RETURNING *
     `;
 
     // AFTER employee insert
-    const eligibleStatuses = ["Temporary", "Permanent", "Contractual", "Casual", "Coterminous"];
-
+    // reuse eligibleStatuses here, no redeclaration
     if (eligibleStatuses.includes(employment_status)) {
       const year = new Date().getFullYear();
 
@@ -101,7 +145,6 @@ export const addEmployee = async (req, res) => {
         `;
       }
 
-      // Female-only leave
       // Female-only leaves
       if (gender === "Female") {
         await sql`
@@ -117,7 +160,6 @@ export const addEmployee = async (req, res) => {
           ON CONFLICT (user_id, leave_type, year) DO NOTHING;
         `;
       }
-
 
       // Male-only leave
       if (gender === "Male" && civil_status === "Married") {
@@ -146,6 +188,7 @@ export const addEmployee = async (req, res) => {
     res.status(500).json({ error: "Failed to add employee" });
   }
 };
+
 
 
 // 📌 Get all employees
@@ -220,7 +263,9 @@ export const getEmployeeById = async (req, res) => {
         e.profile_picture,
         e.created_at,
         e.updated_at,
-        e.inactive_reason
+        e.inactive_reason,
+        e.contract_start_date,
+        e.contract_end_date
       FROM employee_list e
       WHERE e.id = ${id};
     `;
@@ -280,6 +325,8 @@ export const updateEmployee = async (req, res) => {
     date_hired,
     id_number,
     contact_number,
+    contractStart,
+    contractEnd,
     inactive_reason
   } = req.body;
 
@@ -299,6 +346,8 @@ export const updateEmployee = async (req, res) => {
         date_hired = ${date_hired},
         id_number = ${id_number},
         contact_number = ${contact_number},
+        contract_start_date = ${contractStart},
+        contract_end_date = ${contractEnd},
         inactive_reason = ${inactive_reason},
         updated_at = NOW()
       WHERE id = ${id}
