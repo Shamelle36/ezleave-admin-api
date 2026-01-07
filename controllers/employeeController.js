@@ -219,7 +219,8 @@ export const getEmployeeById = async (req, res) => {
         e.contact_number,
         e.profile_picture,
         e.created_at,
-        e.updated_at
+        e.updated_at,
+        e.inactive_reason
       FROM employee_list e
       WHERE e.id = ${id};
     `;
@@ -279,6 +280,7 @@ export const updateEmployee = async (req, res) => {
     date_hired,
     id_number,
     contact_number,
+    inactive_reason
   } = req.body;
 
   try {
@@ -297,6 +299,7 @@ export const updateEmployee = async (req, res) => {
         date_hired = ${date_hired},
         id_number = ${id_number},
         contact_number = ${contact_number},
+        inactive_reason = ${inactive_reason},
         updated_at = NOW()
       WHERE id = ${id}
       RETURNING *;
