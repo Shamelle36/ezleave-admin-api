@@ -15,7 +15,9 @@ export const addEmployee = async (req, res) => {
       status, 
       date_hired, 
       gender, 
-      employment_status
+      employment_status,
+      contract_start_date,
+      contract_end_date
     } = req.body;
 
     // Convert empty id_number and email to null
@@ -28,6 +30,16 @@ export const addEmployee = async (req, res) => {
       date_hired = new Date().toISOString().split('T')[0]; // fallback to today
     } else {
       date_hired = parsedDate.toISOString().split('T')[0]; // format as YYYY-MM-DD
+    }
+
+    if (contract_start_date) {
+      const parsedStart = new Date(contract_start_date);
+      contract_start_date = !isNaN(parsedStart) ? parsedStart.toISOString().split('T')[0] : null;
+    }
+    
+    if (contract_end_date) {
+      const parsedEnd = new Date(contract_end_date);
+      contract_end_date = !isNaN(parsedEnd) ? parsedEnd.toISOString().split('T')[0] : null;
     }
 
     // ✅ Declare eligibleStatuses ONCE
@@ -47,7 +59,9 @@ export const addEmployee = async (req, res) => {
         status, 
         date_hired,
         gender,
-        employment_status
+        employment_status,
+        contract_start_date,
+        contract_end_date
       ) VALUES (
         ${first_name}, 
         ${last_name}, 
@@ -60,7 +74,9 @@ export const addEmployee = async (req, res) => {
         ${status}, 
         ${date_hired},
         ${gender},
-        ${employment_status}
+        ${employment_status},
+        ${contract_start_date},
+        ${contract_end_date}
       )
       RETURNING *
     `;
@@ -277,10 +293,26 @@ export const updateEmployee = async (req, res) => {
     date_hired,
     id_number,
     contact_number,
-    inactive_reason
+    inactive_reason,
+    contract_start_date,
+    contract_end_date
   } = req.body;
 
   try {
+    // Sanitize contract dates if they exist
+    let sanitizedStartDate = null;
+    let sanitizedEndDate = null;
+    
+    if (contract_start_date) {
+      const parsedStart = new Date(contract_start_date);
+      sanitizedStartDate = !isNaN(parsedStart) ? parsedStart.toISOString().split('T')[0] : null;
+    }
+    
+    if (contract_end_date) {
+      const parsedEnd = new Date(contract_end_date);
+      sanitizedEndDate = !isNaN(parsedEnd) ? parsedEnd.toISOString().split('T')[0] : null;
+    }
+
     const result = await sql`
       UPDATE employee_list
       SET
@@ -297,6 +329,8 @@ export const updateEmployee = async (req, res) => {
         id_number = ${id_number},
         contact_number = ${contact_number},
         inactive_reason = ${inactive_reason},
+        contract_start_date = ${sanitizedStartDate},  
+        contract_end_date = ${sanitizedEndDate}, 
         updated_at = NOW()
       WHERE id = ${id}
       RETURNING *;
@@ -307,6 +341,7 @@ export const updateEmployee = async (req, res) => {
     }
 
     res.json(result[0]);
+
   } catch (error) {
     console.error("Error updating employee:", error);
     res.status(500).json({ error: "Failed to update employee" });
