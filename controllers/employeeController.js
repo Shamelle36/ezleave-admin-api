@@ -35,6 +35,10 @@ export const addEmployee = async (req, res) => {
     // ✅ Declare eligibleStatuses ONCE
     const eligibleStatuses = ["Temporary","Permanent", "Contractual", "Casual", "Coterminous"];
 
+    if (employment_status === "Permanent") {
+      contract_start_date = null;
+      contract_end_date = null;
+    }
 
     // INSERT employee with contractStart / contractEnd
     const [employee] = await sql`
