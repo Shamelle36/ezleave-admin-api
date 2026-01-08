@@ -15,9 +15,7 @@ export const addEmployee = async (req, res) => {
       status, 
       date_hired, 
       gender, 
-      employment_status,
-      contract_start_date,
-      contract_end_date
+      employment_status
     } = req.body;
 
     // Convert empty id_number and email to null
@@ -35,12 +33,7 @@ export const addEmployee = async (req, res) => {
     // ✅ Declare eligibleStatuses ONCE
     const eligibleStatuses = ["Temporary","Permanent", "Contractual", "Casual", "Coterminous"];
 
-    if (employment_status === "Permanent") {
-      contract_start_date = null;
-      contract_end_date = null;
-    }
-
-    // INSERT employee with contractStart / contractEnd
+    // INSERT employee WITHOUT contract dates
     const [employee] = await sql`
       INSERT INTO employee_list (
         first_name, 
@@ -54,9 +47,7 @@ export const addEmployee = async (req, res) => {
         status, 
         date_hired,
         gender,
-        employment_status,
-        contract_start_date,
-        contract_end_date
+        employment_status
       ) VALUES (
         ${first_name}, 
         ${last_name}, 
@@ -69,9 +60,7 @@ export const addEmployee = async (req, res) => {
         ${status}, 
         ${date_hired},
         ${gender},
-        ${employment_status},
-        ${contract_start_date},
-        ${contract_end_date}
+        ${employment_status}
       )
       RETURNING *
     `;
@@ -159,8 +148,6 @@ export const addEmployee = async (req, res) => {
   }
 };
 
-
-
 // 📌 Get all employees
 export const getEmployees = async (req, res) => {
   try {
@@ -188,7 +175,6 @@ export const getEmployees = async (req, res) => {
     res.status(500).json({ error: "Failed to fetch employees" });
   }
 };
-
 
 const leaveTypeFullNameMap = {
   "VL": "Vacation Leave",
@@ -231,9 +217,7 @@ export const getEmployeeById = async (req, res) => {
         e.profile_picture,
         e.created_at,
         e.updated_at,
-        e.inactive_reason,
-        e.contract_start_date,
-        e.contract_end_date
+        e.inactive_reason
       FROM employee_list e
       WHERE e.id = ${id};
     `;
@@ -293,8 +277,6 @@ export const updateEmployee = async (req, res) => {
     date_hired,
     id_number,
     contact_number,
-    contractStart,
-    contractEnd,
     inactive_reason
   } = req.body;
 
@@ -314,8 +296,6 @@ export const updateEmployee = async (req, res) => {
         date_hired = ${date_hired},
         id_number = ${id_number},
         contact_number = ${contact_number},
-        contract_start_date = ${contractStart},
-        contract_end_date = ${contractEnd},
         inactive_reason = ${inactive_reason},
         updated_at = NOW()
       WHERE id = ${id}
@@ -379,7 +359,6 @@ export async function getEmployeeCount(req, res) {
     res.status(500).json({ message: "Internal server error" });
   }
 }
-
 
 // 📌 Get employee leave balances
 export const getEmployeeLeaveBalances = async (req, res) => {
