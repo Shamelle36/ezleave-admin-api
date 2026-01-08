@@ -33,42 +33,8 @@ export const addEmployee = async (req, res) => {
     }
 
     // ✅ Declare eligibleStatuses ONCE
-    const eligibleStatuses = ["Temporary", "Permanent", "Contractual", "Casual", "Coterminous"];
+    const eligibleStatuses = ["Temporary","Permanent", "Contractual", "Casual", "Coterminous"];
 
-    // Contract validation
-    let contractStart = null;
-    let contractEnd = null;
-
-    if (eligibleStatuses.includes(employment_status)) {
-      if (!contract_start_date || !contract_end_date) {
-        return res.status(400).json({
-          error: "Contract start and end dates are required for this employment status"
-        });
-      }
-
-      contractStart = new Date(contract_start_date);
-      contractEnd = new Date(contract_end_date);
-      const hiredDate = new Date(date_hired);
-
-      if (isNaN(contractStart) || isNaN(contractEnd)) {
-        return res.status(400).json({ error: "Invalid contract dates" });
-      }
-
-      if (contractStart < hiredDate) {
-        return res.status(400).json({
-          error: "Contract start date cannot be before date hired"
-        });
-      }
-
-      if (contractEnd <= contractStart) {
-        return res.status(400).json({
-          error: "Contract end date must be after contract start date"
-        });
-      }
-
-      contractStart = contractStart.toISOString().split("T")[0];
-      contractEnd = contractEnd.toISOString().split("T")[0];
-    }
 
     // INSERT employee with contractStart / contractEnd
     const [employee] = await sql`
@@ -100,8 +66,8 @@ export const addEmployee = async (req, res) => {
         ${date_hired},
         ${gender},
         ${employment_status},
-        ${contractStart},
-        ${contractEnd}
+        ${contract_start_date},
+        ${contract_end_date}
       )
       RETURNING *
     `;
@@ -220,8 +186,6 @@ export const getEmployees = async (req, res) => {
 };
 
 
-// 📌 Get single employee by ID
-// Reverse map: short code -> full name
 const leaveTypeFullNameMap = {
   "VL": "Vacation Leave",
   "ML": "Mandatory/Forced Leave",
