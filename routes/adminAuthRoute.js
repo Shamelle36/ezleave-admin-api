@@ -8,7 +8,12 @@ import {
   getUserById,
   updateProfile,
   googleLogin,
-  updateAccount
+  updateAccount,
+  fetchInactiveAccounts,
+  deactivateAccount,
+  restoreAccount,
+  resetPassword,
+  processPasswordReset
 } from "../controllers/adminAuthController.js";
 
 const router = express.Router();
@@ -30,5 +35,12 @@ router.put("/update/:id", updateProfile);
 router.post("/google-login", googleLogin);
 
 router.put("/accounts/:id", updateAccount);
+
+// In adminAuthRoutes.js or similar
+router.get('/accounts/inactive', fetchInactiveAccounts);
+router.put('/accounts/:id/deactivate', deactivateAccount);
+router.put('/accounts/:id/restore', restoreAccount);
+router.post('/reset-password/:id', resetPassword);
+router.post('/process-reset/:token', processPasswordReset);
 
 export default router;
