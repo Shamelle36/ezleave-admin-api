@@ -104,8 +104,8 @@ export const addEmployee = async (req, res) => {
         ${date_hired},
         ${gender},
         ${employment_status},
-        ${contract_start_date},  // Use the sanitized variable
-        ${contract_end_date}     // Use the sanitized variable
+        ${contract_start_date},  
+        ${contract_end_date}     
       )
       RETURNING *
     `;
