@@ -801,6 +801,7 @@ export const updateLeaveEntitlement = async (req, res) => {
 };
 
 // 📌 Add new leave type to all employees
+// 📌 Add new leave type to all employees who already have leave entitlements
 export const addLeaveTypeToAllEmployees = async (req, res) => {
   try {
     const { leaveType, days, description } = req.body;
@@ -812,59 +813,101 @@ export const addLeaveTypeToAllEmployees = async (req, res) => {
       });
     }
 
-    console.log(`📝 Adding new leave type "${leaveType}" to all employees...`);
+    console.log(`📝 Adding new leave type "${leaveType}" to employees with existing leave entitlements...`);
 
-    // Get all eligible employees (based on employment status)
-    const eligibleStatuses = ["Temporary", "Permanent", "Contractual", "Casual", "Coterminous"];
-    
+    // Get DISTINCT employees who already have leave entitlements
     const employees = await sql`
-      SELECT id FROM employee_list 
-      WHERE employment_status IN (${sql(eligibleStatuses)})
+      SELECT DISTINCT user_id as id 
+      FROM leave_entitlements 
+      WHERE year = ${year}
+      ORDER BY user_id
     `;
 
-    console.log(`✅ Found ${employees.length} eligible employees`);
+    console.log(`✅ Found ${employees.length} employees with existing leave entitlements`);
+
+    // If no employees found, you might want to get employees from employee_list
+    // who should have leave entitlements based on their status
+    if (employees.length === 0) {
+      console.log("⚠️ No employees found with existing leave entitlements. Checking eligible employees...");
+      
+      // Option 1: Get employees from employee_list based on employment status
+      const eligibleStatuses = ["Temporary", "Permanent", "Contractual", "Casual", "Coterminous"];
+      
+      const eligibleEmployees = await sql`
+        SELECT id FROM employee_list 
+        WHERE employment_status = ANY(${eligibleStatuses})
+      `;
+      
+      console.log(`✅ Found ${eligibleEmployees.length} eligible employees from employee_list`);
+      employees = eligibleEmployees;
+    }
 
     let addedCount = 0;
+    let updatedCount = 0;
     let skippedCount = 0;
+    let errors = [];
 
     // Add leave type to each employee
     for (const employee of employees) {
       try {
-        await sql`
+        const result = await sql`
           INSERT INTO leave_entitlements (
             user_id,
             leave_type,
             year,
             total_days,
             used_days,
+            description,
+            created_at,
+            updated_at
           ) VALUES (
             ${employee.id},
             ${leaveType},
             ${year},
             ${days},
             0,
-            ${description || null}
+            ${description || null},
+            NOW(),
+            NOW()
           )
           ON CONFLICT (user_id, leave_type, year) 
           DO UPDATE SET 
-            total_days = EXCLUDED.total_days,
+            total_days = ${days},
+            description = ${description || null},
             updated_at = NOW()
+          RETURNING id
         `;
-        addedCount++;
+        
+        if (result && result.length > 0) {
+          if (result[0].id) {
+            addedCount++;
+          } else {
+            updatedCount++;
+          }
+        }
+        
       } catch (error) {
         console.error(`Error adding leave type for employee ${employee.id}:`, error);
         skippedCount++;
+        errors.push({ 
+          employeeId: employee.id, 
+          error: error.message 
+        });
       }
     }
 
-    console.log(`✅ Leave type "${leaveType}" added to ${addedCount} employees, skipped ${skippedCount}`);
+    console.log(`✅ Leave type "${leaveType}" added to ${addedCount} employees, updated for ${updatedCount}, skipped ${skippedCount}`);
 
     res.status(200).json({
       success: true,
       message: `Leave type "${leaveType}" added to ${addedCount} employees`,
-      addedCount,
-      skippedCount,
-      totalEmployees: employees.length
+      stats: {
+        added: addedCount,
+        updated: updatedCount,
+        skipped: skippedCount,
+        total: employees.length
+      },
+      errors: errors.length > 0 ? errors : undefined
     });
 
   } catch (error) {
