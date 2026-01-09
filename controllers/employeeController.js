@@ -804,7 +804,7 @@ export const updateLeaveEntitlement = async (req, res) => {
 // 📌 Add new leave type to all employees who already have leave entitlements
 export const addLeaveTypeToAllEmployees = async (req, res) => {
   try {
-    const { leaveType, days, description } = req.body;
+    const { leaveType, days } = req.body;
     const year = new Date().getFullYear();
 
     if (!leaveType || days === undefined) {
