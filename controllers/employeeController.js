@@ -42,6 +42,30 @@ export const addEmployee = async (req, res) => {
       contract_end_date = !isNaN(parsedEnd) ? parsedEnd.toISOString().split('T')[0] : null;
     }
 
+      let sanitizedStartDate = null;
+    let sanitizedEndDate = null;
+    
+    if (contract_start_date && contract_start_date.trim() !== "") {
+      const parsedStart = new Date(contract_start_date);
+      sanitizedStartDate = !isNaN(parsedStart) ? parsedStart.toISOString().split('T')[0] : null;
+    }
+    
+    if (contract_end_date && contract_end_date.trim() !== "") {
+      const parsedEnd = new Date(contract_end_date);
+      sanitizedEndDate = !isNaN(parsedEnd) ? parsedEnd.toISOString().split('T')[0] : null;
+    }
+
+    // ✅ For Permanent employees, always set contract dates to NULL if not provided
+    if (employment_status === "Permanent" || employment_status === "permanent") {
+      // If contract dates are empty strings, set to null
+      if (!contract_start_date || contract_start_date.trim() === "") {
+        sanitizedStartDate = null;
+      }
+      if (!contract_end_date || contract_end_date.trim() === "") {
+        sanitizedEndDate = null;
+      }
+    }
+
     // ✅ Declare eligibleStatuses ONCE
     const eligibleStatuses = ["Temporary","Permanent", "Contractual", "Casual", "Coterminous"];
 
