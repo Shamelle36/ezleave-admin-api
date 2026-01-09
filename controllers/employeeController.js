@@ -866,14 +866,12 @@ export const addLeaveTypeToAllEmployees = async (req, res) => {
             ${year},
             ${days},
             0,
-            ${description || null},
             NOW(),
             NOW()
           )
           ON CONFLICT (user_id, leave_type, year) 
           DO UPDATE SET 
             total_days = ${days},
-            description = ${description || null},
             updated_at = NOW()
           RETURNING id
         `;
