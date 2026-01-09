@@ -1,5 +1,6 @@
 // controllers/employeeController.js
 import sql from "../config/db.js";
+import { cloudinary } from "../config/cloudinary.js";
 
 export const addEmployee = async (req, res) => {
   try {
@@ -90,7 +91,10 @@ export const addEmployee = async (req, res) => {
         gender,
         employment_status,
         contract_start_date,
-        contract_end_date
+        contract_end_date,
+        signature_url,
+        signature_uploaded_at,
+        cloudinary_public_id
       ) VALUES (
         ${first_name}, 
         ${last_name}, 
@@ -105,9 +109,12 @@ export const addEmployee = async (req, res) => {
         ${gender},
         ${employment_status},
         ${contract_start_date},  
-        ${contract_end_date}     
+        ${contract_end_date},
+        NULL,  -- signature_url initially null
+        NULL,  -- signature_uploaded_at initially null
+        NULL   -- cloudinary_public_id initially null
       )
-      RETURNING *
+      RETURNING *;
     `;
 
     console.log("✅ Employee inserted with ID:", employee.id, "Status:", employee.employment_status);
@@ -223,7 +230,7 @@ export const addEmployee = async (req, res) => {
   }
 };
 
-// 📌 Get all employees
+// 📌 Get all employees (updated to include signature status)
 export const getEmployees = async (req, res) => {
   try {
     const role = req.query.role || "admin";
@@ -233,11 +240,25 @@ export const getEmployees = async (req, res) => {
     
     if (role === "admin" || role === "mayor") {
       // Both admin and mayor can see all employees
-      result = await sql`SELECT * FROM employee_list ORDER BY id DESC;`;
+      result = await sql`
+        SELECT 
+          *,
+          CASE 
+            WHEN signature_url IS NOT NULL THEN true
+            ELSE false
+          END as has_signature
+        FROM employee_list 
+        ORDER BY id DESC;
+      `;
     } else {
       // Office heads can only see their department employees
       result = await sql`
-        SELECT *
+        SELECT 
+          *,
+          CASE 
+            WHEN signature_url IS NOT NULL THEN true
+            ELSE false
+          END as has_signature
         FROM employee_list
         WHERE department = ${department}
         ORDER BY id DESC;
@@ -248,6 +269,31 @@ export const getEmployees = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch employees" });
+  }
+};
+
+// 📌 Get all signatures for frontend mapping
+export const getAllSignatures = async (req, res) => {
+  try {
+    const signatures = await sql`
+      SELECT 
+        id,
+        signature_url,
+        signature_uploaded_at
+      FROM employee_list
+      WHERE signature_url IS NOT NULL;
+    `;
+
+    // Convert to object format for frontend
+    const signatureMap = {};
+    signatures.forEach(sig => {
+      signatureMap[sig.id] = sig.signature_url;
+    });
+
+    res.json(signatureMap);
+  } catch (error) {
+    console.error("Error fetching signatures:", error);
+    res.status(500).json({ error: "Failed to fetch signatures" });
   }
 };
 
@@ -290,9 +336,16 @@ export const getEmployeeById = async (req, res) => {
         e.id_number,
         e.contact_number,
         e.profile_picture,
+        e.signature_url,
+        e.signature_uploaded_at,
+        e.cloudinary_public_id,
         e.created_at,
         e.updated_at,
-        e.inactive_reason
+        e.inactive_reason,
+        CASE 
+          WHEN e.signature_url IS NOT NULL THEN true
+          ELSE false
+        END as has_signature
       FROM employee_list e
       WHERE e.id = ${id};
     `;
@@ -333,6 +386,185 @@ export const getEmployeeById = async (req, res) => {
   } catch (error) {
     console.error("Error fetching employee:", error);
     res.status(500).json({ error: "Failed to fetch employee" });
+  }
+};
+
+// 📌 Get employee signature
+export const getEmployeeSignature = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await sql`
+      SELECT 
+        id,
+        first_name,
+        last_name,
+        signature_url,
+        signature_uploaded_at,
+        cloudinary_public_id
+      FROM employee_list
+      WHERE id = ${id};
+    `;
+
+    if (result.length === 0) {
+      return res.status(404).json({ error: "Employee not found" });
+    }
+
+    const employee = result[0];
+    
+    if (!employee.signature_url) {
+      return res.status(404).json({ error: "No signature found for this employee" });
+    }
+
+    res.json({
+      success: true,
+      signature_url: employee.signature_url,
+      uploaded_at: employee.signature_uploaded_at,
+      public_id: employee.cloudinary_public_id,
+      employee_name: `${employee.first_name} ${employee.last_name}`
+    });
+  } catch (error) {
+    console.error("Error fetching signature:", error);
+    res.status(500).json({ error: "Failed to fetch signature" });
+  }
+};
+
+// 📌 Upload employee signature to Cloudinary
+export const uploadEmployeeSignature = async (req, res) => {
+  const { id } = req.params;
+  
+  try {
+    // Check if employee exists
+    const employeeCheck = await sql`
+      SELECT id, first_name, last_name, cloudinary_public_id 
+      FROM employee_list 
+      WHERE id = ${id};
+    `;
+    
+    if (employeeCheck.length === 0) {
+      return res.status(404).json({ error: "Employee not found" });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: "No signature file uploaded" });
+    }
+
+    const employee = employeeCheck[0];
+    const oldPublicId = employee.cloudinary_public_id;
+
+    // If employee already has a signature, delete the old one from Cloudinary
+    if (oldPublicId) {
+      try {
+        await cloudinary.uploader.destroy(oldPublicId);
+        console.log(`Deleted old signature: ${oldPublicId}`);
+      } catch (deleteError) {
+        console.warn("Could not delete old signature from Cloudinary:", deleteError);
+      }
+    }
+
+    // Upload to Cloudinary
+    const result = await cloudinary.uploader.upload(req.file.path, {
+      folder: "employee-signatures",
+      public_id: `signature_${id}_${Date.now()}`,
+      overwrite: true,
+      resource_type: "image",
+      transformation: [
+        { width: 500, height: 200, crop: "limit" } // Resize for consistency
+      ]
+    });
+
+    console.log("Cloudinary upload result:", {
+      public_id: result.public_id,
+      secure_url: result.secure_url
+    });
+
+    // Update employee record with Cloudinary URL
+    const updatedEmployee = await sql`
+      UPDATE employee_list
+      SET 
+        signature_url = ${result.secure_url},
+        signature_uploaded_at = NOW(),
+        cloudinary_public_id = ${result.public_id}
+      WHERE id = ${id}
+      RETURNING *;
+    `;
+
+    res.status(200).json({
+      success: true,
+      message: "Signature uploaded successfully",
+      signature_url: result.secure_url,
+      public_id: result.public_id,
+      employee: {
+        id: updatedEmployee[0].id,
+        name: `${employee.first_name} ${employee.last_name}`,
+        signature_uploaded_at: updatedEmployee[0].signature_uploaded_at
+      }
+    });
+
+  } catch (error) {
+    console.error("Error uploading signature:", error);
+    res.status(500).json({ 
+      success: false,
+      error: "Failed to upload signature",
+      details: error.message 
+    });
+  }
+};
+
+// 📌 Delete employee signature from Cloudinary
+export const deleteEmployeeSignature = async (req, res) => {
+  const { id } = req.params;
+  
+  try {
+    // Check if employee exists and has a signature
+    const employee = await sql`
+      SELECT signature_url, cloudinary_public_id 
+      FROM employee_list 
+      WHERE id = ${id};
+    `;
+    
+    if (employee.length === 0) {
+      return res.status(404).json({ error: "Employee not found" });
+    }
+
+    if (!employee[0].signature_url) {
+      return res.status(404).json({ error: "No signature found for this employee" });
+    }
+
+    const publicId = employee[0].cloudinary_public_id;
+
+    // Delete from Cloudinary if public_id exists
+    if (publicId) {
+      try {
+        await cloudinary.uploader.destroy(publicId);
+        console.log(`Deleted signature from Cloudinary: ${publicId}`);
+      } catch (cloudinaryError) {
+        console.warn("Could not delete from Cloudinary:", cloudinaryError);
+      }
+    }
+
+    // Update employee record
+    await sql`
+      UPDATE employee_list
+      SET 
+        signature_url = NULL,
+        signature_uploaded_at = NULL,
+        cloudinary_public_id = NULL
+      WHERE id = ${id}
+      RETURNING *;
+    `;
+
+    res.status(200).json({
+      success: true,
+      message: "Signature deleted successfully"
+    });
+
+  } catch (error) {
+    console.error("Error deleting signature:", error);
+    res.status(500).json({ 
+      success: false,
+      error: "Failed to delete signature",
+      details: error.message 
+    });
   }
 };
 
@@ -407,10 +639,26 @@ export const updateEmployee = async (req, res) => {
   }
 };
 
-// 📌 Delete employee
+// 📌 Delete employee (with Cloudinary cleanup)
 export const deleteEmployee = async (req, res) => {
   const { id } = req.params;
   try {
+    // First, delete signature from Cloudinary if exists
+    const employee = await sql`
+      SELECT cloudinary_public_id FROM employee_list WHERE id = ${id};
+    `;
+    
+    if (employee.length > 0 && employee[0].cloudinary_public_id) {
+      const publicId = employee[0].cloudinary_public_id;
+      try {
+        await cloudinary.uploader.destroy(publicId);
+        console.log(`Deleted signature from Cloudinary for employee ${id}: ${publicId}`);
+      } catch (cloudinaryError) {
+        console.warn("Could not delete signature from Cloudinary:", cloudinaryError);
+      }
+    }
+
+    // Delete from database
     const result = await sql`
       DELETE FROM employee_list
       WHERE id = ${id}

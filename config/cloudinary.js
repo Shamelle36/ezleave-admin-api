@@ -8,12 +8,26 @@ cloudinary.config({
   api_secret: process.env.API_SECRET,
 });
 
-const storage = new CloudinaryStorage({
+// Storage for announcements
+const announcementStorage = new CloudinaryStorage({
   cloudinary,
   params: {
     folder: "announcements",
-    resource_type: "auto", // supports pdf, docs, images, etc.
+    resource_type: "auto",
   },
 });
 
-export { cloudinary, storage };
+// Storage for signatures (with specific settings)
+const signatureStorage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: "employee-signatures",
+    resource_type: "image",
+    allowed_formats: ["jpg", "jpeg", "png", "svg"],
+    transformation: [
+      { width: 500, height: 200, crop: "limit" } // Resize for consistency
+    ]
+  },
+});
+
+export { cloudinary, announcementStorage, signatureStorage };
