@@ -12,7 +12,8 @@ import {
   getAllSignatures,
   getEmployeeSignature,
   uploadEmployeeSignature,
-  deleteEmployeeSignature
+  deleteEmployeeSignature,
+  addLeaveTypeToAllEmployees
 } from "../controllers/employeeController.js";
 import { signatureStorage } from "../config/cloudinary.js";
 import multer from "multer";
@@ -50,5 +51,8 @@ router.get("/signatures/all", getAllSignatures);
 router.get("/:id/signature", getEmployeeSignature);
 router.post("/:id/signature", upload.single('signature'), uploadEmployeeSignature);
 router.delete("/:id/signature", deleteEmployeeSignature);
+
+
+router.post('/add-leave-type-to-all', addLeaveTypeToAllEmployees);
 
 export default router;

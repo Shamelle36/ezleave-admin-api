@@ -799,3 +799,79 @@ export const updateLeaveEntitlement = async (req, res) => {
     });
   }
 };
+
+// 📌 Add new leave type to all employees
+export const addLeaveTypeToAllEmployees = async (req, res) => {
+  try {
+    const { leaveType, days, description } = req.body;
+    const year = new Date().getFullYear();
+
+    if (!leaveType || days === undefined) {
+      return res.status(400).json({ 
+        error: "Leave type and days are required" 
+      });
+    }
+
+    console.log(`📝 Adding new leave type "${leaveType}" to all employees...`);
+
+    // Get all eligible employees (based on employment status)
+    const eligibleStatuses = ["Temporary", "Permanent", "Contractual", "Casual", "Coterminous"];
+    
+    const employees = await sql`
+      SELECT id FROM employee_list 
+      WHERE employment_status IN (${sql(eligibleStatuses)})
+    `;
+
+    console.log(`✅ Found ${employees.length} eligible employees`);
+
+    let addedCount = 0;
+    let skippedCount = 0;
+
+    // Add leave type to each employee
+    for (const employee of employees) {
+      try {
+        await sql`
+          INSERT INTO leave_entitlements (
+            user_id,
+            leave_type,
+            year,
+            total_days,
+            used_days,
+          ) VALUES (
+            ${employee.id},
+            ${leaveType},
+            ${year},
+            ${days},
+            0,
+            ${description || null}
+          )
+          ON CONFLICT (user_id, leave_type, year) 
+          DO UPDATE SET 
+            total_days = EXCLUDED.total_days,
+            updated_at = NOW()
+        `;
+        addedCount++;
+      } catch (error) {
+        console.error(`Error adding leave type for employee ${employee.id}:`, error);
+        skippedCount++;
+      }
+    }
+
+    console.log(`✅ Leave type "${leaveType}" added to ${addedCount} employees, skipped ${skippedCount}`);
+
+    res.status(200).json({
+      success: true,
+      message: `Leave type "${leaveType}" added to ${addedCount} employees`,
+      addedCount,
+      skippedCount,
+      totalEmployees: employees.length
+    });
+
+  } catch (error) {
+    console.error("❌ Error adding leave type to all employees:", error);
+    res.status(500).json({ 
+      error: "Failed to add leave type to all employees",
+      details: error.message 
+    });
+  }
+};
