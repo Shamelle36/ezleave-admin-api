@@ -33,7 +33,6 @@ export const fetchAccounts = async (req, res) => {
     const accounts = await sql`
       SELECT id, full_name, email, role, department, status, created_at, last_login
       FROM admin_accounts
-      WHERE status = 'active'
       ORDER BY full_name ASC
     `;
 
