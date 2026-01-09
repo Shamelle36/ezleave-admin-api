@@ -20,56 +20,61 @@ export const addEmployee = async (req, res) => {
       contract_end_date
     } = req.body;
 
+    console.log("📥 Received employee data:", {
+      first_name, last_name, employment_status,
+      contract_start_date, contract_end_date
+    });
+
     // Convert empty id_number and email to null
     id_number = id_number?.trim() || null;
-    email = email?.trim() || null;  // <-- allow multiple employees without email
+    email = email?.trim() || null;
 
     // Sanitize date_hired
-    const parsedDate = new Date(date_hired);
-    if (isNaN(parsedDate)) {
-      date_hired = new Date().toISOString().split('T')[0]; // fallback to today
+    if (date_hired) {
+      const parsedDate = new Date(date_hired);
+      if (!isNaN(parsedDate)) {
+        date_hired = parsedDate.toISOString().split('T')[0];
+      } else {
+        date_hired = new Date().toISOString().split('T')[0];
+      }
     } else {
-      date_hired = parsedDate.toISOString().split('T')[0]; // format as YYYY-MM-DD
+      date_hired = new Date().toISOString().split('T')[0];
     }
 
-    if (contract_start_date) {
-      const parsedStart = new Date(contract_start_date);
-      contract_start_date = !isNaN(parsedStart) ? parsedStart.toISOString().split('T')[0] : null;
-    }
-    
-    if (contract_end_date) {
-      const parsedEnd = new Date(contract_end_date);
-      contract_end_date = !isNaN(parsedEnd) ? parsedEnd.toISOString().split('T')[0] : null;
-    }
-
-      let sanitizedStartDate = null;
-    let sanitizedEndDate = null;
-    
+    // Sanitize contract_start_date
     if (contract_start_date && contract_start_date.trim() !== "") {
       const parsedStart = new Date(contract_start_date);
-      sanitizedStartDate = !isNaN(parsedStart) ? parsedStart.toISOString().split('T')[0] : null;
+      if (!isNaN(parsedStart)) {
+        contract_start_date = parsedStart.toISOString().split('T')[0];
+      } else {
+        contract_start_date = null;
+      }
+    } else {
+      contract_start_date = null;
     }
     
+    // Sanitize contract_end_date
     if (contract_end_date && contract_end_date.trim() !== "") {
       const parsedEnd = new Date(contract_end_date);
-      sanitizedEndDate = !isNaN(parsedEnd) ? parsedEnd.toISOString().split('T')[0] : null;
+      if (!isNaN(parsedEnd)) {
+        contract_end_date = parsedEnd.toISOString().split('T')[0];
+      } else {
+        contract_end_date = null;
+      }
+    } else {
+      contract_end_date = null;
     }
 
-    // ✅ For Permanent employees, always set contract dates to NULL if not provided
-    if (employment_status === "Permanent" || employment_status === "permanent") {
-      // If contract dates are empty strings, set to null
-      if (!contract_start_date || contract_start_date.trim() === "") {
-        sanitizedStartDate = null;
-      }
-      if (!contract_end_date || contract_end_date.trim() === "") {
-        sanitizedEndDate = null;
-      }
-    }
+    console.log("🧹 Sanitized dates:", {
+      date_hired,
+      contract_start_date,
+      contract_end_date
+    });
 
-    // ✅ Declare eligibleStatuses ONCE
-    const eligibleStatuses = ["Temporary","Permanent", "Contractual", "Casual", "Coterminous"];
+    // ✅ Declare eligibleStatuses - Include ALL statuses
+    const eligibleStatuses = ["Temporary", "Permanent", "Contractual", "Casual", "Coterminous", "Job Order"];
 
-    // INSERT employee WITHOUT contract dates
+    // INSERT employee
     const [employee] = await sql`
       INSERT INTO employee_list (
         first_name, 
@@ -99,19 +104,22 @@ export const addEmployee = async (req, res) => {
         ${date_hired},
         ${gender},
         ${employment_status},
-        ${contract_start_date},
-        ${contract_end_date}
+        ${contract_start_date},  // Use the sanitized variable
+        ${contract_end_date}     // Use the sanitized variable
       )
       RETURNING *
     `;
 
+    console.log("✅ Employee inserted with ID:", employee.id, "Status:", employee.employment_status);
+
     // AFTER employee insert
-    // reuse eligibleStatuses here, no redeclaration
     if (eligibleStatuses.includes(employment_status)) {
       const year = new Date().getFullYear();
 
-      // Neutral leaves for everyone
+      // Neutral leaves for everyone - INCLUDING VL and SL
       const neutralLeaves = [
+        { type: "VL", days: 15 },
+        { type: "SL", days: 15 },
         { type: "ML", days: 5 },
         { type: "SPL", days: 3 },
         { type: "SOLO", days: 7 },
@@ -124,67 +132,94 @@ export const addEmployee = async (req, res) => {
         { type: "AL", days: 0 },
       ];
 
+      console.log("📝 Creating leave entitlements...");
+
       // Insert neutral leaves
       for (const leave of neutralLeaves) {
-        await sql`
-          INSERT INTO leave_entitlements (
-            user_id,
-            leave_type,
-            year,
-            total_days,
-            used_days
-          ) VALUES (
-            ${employee.id},
-            ${leave.type},
-            ${year},
-            ${leave.days},
-            0
-          )
-          ON CONFLICT (user_id, leave_type, year) DO NOTHING;
-        `;
+        try {
+          await sql`
+            INSERT INTO leave_entitlements (
+              user_id,
+              leave_type,
+              year,
+              total_days,
+              used_days
+            ) VALUES (
+              ${employee.id},
+              ${leave.type},
+              ${year},
+              ${leave.days},
+              0
+            )
+            ON CONFLICT (user_id, leave_type, year) DO NOTHING;
+          `;
+        } catch (leaveError) {
+          console.error(`Error inserting ${leave.type}:`, leaveError);
+        }
       }
 
       // Female-only leaves
       if (gender === "Female") {
-        await sql`
-          INSERT INTO leave_entitlements (
-            user_id,
-            leave_type,
-            year,
-            total_days,
-            used_days
-          ) VALUES
-            (${employee.id}, 'MAT', ${year}, 105, 0),
-            (${employee.id}, 'MCW', ${year}, 60, 0)
-          ON CONFLICT (user_id, leave_type, year) DO NOTHING;
-        `;
+        try {
+          await sql`
+            INSERT INTO leave_entitlements (
+              user_id,
+              leave_type,
+              year,
+              total_days,
+              used_days
+            ) VALUES
+              (${employee.id}, 'MAT', ${year}, 105, 0),
+              (${employee.id}, 'MCW', ${year}, 60, 0)
+            ON CONFLICT (user_id, leave_type, year) DO NOTHING;
+          `;
+        } catch (error) {
+          console.error("Error inserting female leaves:", error);
+        }
       }
 
       // Male-only leave
       if (gender === "Male" && civil_status === "Married") {
-        await sql`
-          INSERT INTO leave_entitlements (
-            user_id,
-            leave_type,
-            year,
-            total_days,
-            used_days
-          ) VALUES (
-            ${employee.id},
-            'PAT',
-            ${year},
-            7,
-            0
-          )
-          ON CONFLICT (user_id, leave_type, year) DO NOTHING;
-        `;
+        try {
+          await sql`
+            INSERT INTO leave_entitlements (
+              user_id,
+              leave_type,
+              year,
+              total_days,
+              used_days
+            ) VALUES (
+              ${employee.id},
+              'PAT',
+              ${year},
+              7,
+              0
+            )
+            ON CONFLICT (user_id, leave_type, year) DO NOTHING;
+          `;
+        } catch (error) {
+          console.error("Error inserting paternity leave:", error);
+        }
       }
+
+      console.log("✅ Leave entitlements created successfully");
+    } else {
+      console.log("ℹ️ Employee status not eligible for leave entitlements:", employment_status);
     }
 
+    console.log("🎉 Employee added successfully:", employee);
     res.status(201).json(employee);
   } catch (error) {
-    console.error("Error adding employee:", error);
-    res.status(500).json({ error: "Failed to add employee" });
+    console.error("❌ Error adding employee:", error);
+    console.error("❌ Error details:", error.message);
+    console.error("❌ Error stack:", error.stack);
+    console.error("❌ Request body:", req.body);
+    
+    res.status(500).json({ 
+      error: "Failed to add employee",
+      details: error.message,
+      employment_status: req.body.employment_status
+    });
   }
 };
 
