@@ -857,7 +857,6 @@ export const addLeaveTypeToAllEmployees = async (req, res) => {
             year,
             total_days,
             used_days,
-            description,
             created_at,
             updated_at
           ) VALUES (
