@@ -915,3 +915,57 @@ export const addLeaveTypeToAllEmployees = async (req, res) => {
     });
   }
 };
+
+// controllers/employeeController.js
+
+// 📌 Get all distinct leave types from leave_entitlements
+export const getAllLeaveTypes = async (req, res) => {
+  try {
+    // Fetch distinct leave types from leave_entitlements
+    const leaveTypes = await sql`
+      SELECT DISTINCT leave_type 
+      FROM leave_entitlements 
+      ORDER BY leave_type;
+    `;
+
+    console.log("✅ Fetched leave types:", leaveTypes);
+
+    // Map short codes to full names
+    const leaveTypeFullNameMap = {
+      "VL": "Vacation Leave",
+      "ML": "Mandatory/Forced Leave",
+      "SL": "Sick Leave",
+      "MAT": "Maternity Leave",
+      "PAT": "Paternity Leave",
+      "SPL": "Special Privilege Leave",
+      "SOLO": "Solo Parent Leave",
+      "STUDY": "Study Leave",
+      "VAWC": "VAWC Leave",
+      "RL": "Rehabilitation Leave",
+      "SLBW": "Special Leave Benefits for Women",
+      "CALAMITY": "Special Emergency (Calamity) Leave",
+      "MOL": "Monetization of Leave Credits",
+      "TL": "Terminal Leave",
+      "AL": "Adoption Leave",
+      "WL": "Wellness Leave"
+    };
+
+    // Transform to include both code and full name
+    const formattedLeaveTypes = leaveTypes.map(type => ({
+      code: type.leave_type,
+      name: leaveTypeFullNameMap[type.leave_type] || type.leave_type
+    }));
+
+    res.json({
+      success: true,
+      leaveTypes: formattedLeaveTypes
+    });
+
+  } catch (error) {
+    console.error("❌ Error fetching leave types:", error);
+    res.status(500).json({ 
+      success: false,
+      error: "Failed to fetch leave types" 
+    });
+  }
+};
