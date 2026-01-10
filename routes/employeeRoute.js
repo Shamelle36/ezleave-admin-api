@@ -37,6 +37,8 @@ const upload = multer({
   }
 });
 
+router.get('/leave-types', getAllLeaveTypes);
+
 // Employee routes
 router.post("/", addEmployee);
 router.get("/", getEmployees);
@@ -55,6 +57,5 @@ router.delete("/:id/signature", deleteEmployeeSignature);
 
 
 router.post('/add-leave-type-to-all', addLeaveTypeToAllEmployees);
-router.get('/leave-types', getAllLeaveTypes);
 
 export default router;
