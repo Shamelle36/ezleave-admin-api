@@ -952,7 +952,9 @@ export const getAllLeaveTypes = async (req, res) => {
     // Transform to include both code and full name
     const formattedLeaveTypes = leaveTypes.map(type => ({
       code: type.leave_type,
-      name: leaveTypeFullNameMap[type.leave_type] || type.leave_type
+      name: leaveTypeFullNameMap[type.leave_type] || type.leave_type,
+      total_days: type.total_days, 
+      days: type.total_days  
     }));
 
     res.json({
