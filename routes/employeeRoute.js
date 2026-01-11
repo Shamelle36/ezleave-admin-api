@@ -66,6 +66,6 @@ router.delete('/leave-types/:abbreviation', deleteLeaveType);
 router.get('/leave-types/:abbreviation', getLeaveTypeDetails);
 router.get('/leave-types', getAllLeaveTypes);
 
-router.get('/:id/leave-history', getEmployeeLeaveHistory);
+router.get('/:id/leaveHistory', getEmployeeLeaveHistory);
 
 export default router;
