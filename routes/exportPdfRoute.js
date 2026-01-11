@@ -2,7 +2,7 @@ import express from "express";
 import ExcelJS from "exceljs";
 import fs from "fs";
 import path from "path";
-import PDFDocument from "pdfkit";
+import puppeteer from "puppeteer";
 
 const router = express.Router();
 
@@ -53,157 +53,222 @@ router.post("/export-pdf", async (req, res) => {
     const tempExcelPath = path.resolve(`${tempDir}/${employee.last_name}_${employee.first_name}.xlsx`);
     await workbook.xlsx.writeFile(tempExcelPath);
 
-    // 2️⃣ Create PDF using PDFKit
-    const doc = new PDFDocument({
-      size: 'LETTER',
-      margin: 20,
-      bufferPages: true
+    // 2️⃣ Build styled HTML (pixel-like layout; vertical headers rendered letter-per-line)
+    const html = `
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    /* Reset & base */
+    * { box-sizing: border-box; }
+    body {
+      font-family: Arial, sans-serif;
+      font-size: 11px;
+      margin: 0;
+      padding: 20px;
+    }
+
+    .center {
+      text-align: center;
+    }
+
+    h4 { margin: 0; font-weight: normal; font-size: 14px; }
+    h2 {
+      margin: 8px 0 12px 0;
+      font-size: 21px;
+      font-weight: 700;
+      letter-spacing: 1px;
+    }
+
+    /* Employee info */
+    .info {
+      width: 100%;
+      margin-bottom: 8px;
+      font-size: 12px;
+    }
+    .info td { padding: 3px 4px; vertical-align: bottom; }
+    .label { width: 70px; font-weight: 700; }
+    .underline {
+      display: inline-block;
+      border-bottom: 1px solid #000;
+      min-width: 180px;
+      height: 14px;
+      vertical-align: bottom;
+    }
+    .small-line { min-width: 80px; }
+
+    
+
+    /* Leave table */
+    table.leave {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: 10.5px;
+    }
+    table.leave th, table.leave td {
+      border: 1px solid #000;
+      padding: 4px 6px;
+      vertical-align: middle;
+      word-wrap: break-word;
+    }
+
+    /* Vertical header (letter per line) */
+    .vertical {
+      font-size: 10px;
+      line-height: 10px;
+      text-align: center;
+      padding: 6px 3px;
+      white-space: nowrap;
+      letter-spacing: 2px;
+    }
+    /* narrow column class */
+    .col-narrow { width: 100px; }
+
+    /* Particulars column left-aligned */
+    .left { text-align: left; padding-left: 6px; font-size: 10px; }
+
+    .remarks { text-align: left; padding-left: 6px; font-size: 9px; }
+
+    /* make header block heights similar to screenshot */
+    thead th { background: transparent; }
+
+    /* Smaller font for multi-line small captions */
+    .tiny { font-size: 10px; }
+
+    /* Force word-break for long remarks */
+    .remarks { word-break: break-word; }
+
+    .fontSize { font-size: 14px; }
+
+    
+    /* Add bottom margin for every page */
+    @page {
+    margin-bottom: 20px;
+    margin-top: 20px;
+    }
+
+
+  </style>
+</head>
+<body>
+  <div class="center">
+    <h4>Republic of the Philippines</h4>
+    <h4>Province of Occidental Mindoro</h4>
+    <h4>Municipality of Paluan</h4>
+    <h2 style="margin-top: 50px; margin-bottom: 20px">EMPLOYEES LEAVE CARD</h2>
+  </div>
+
+  <!-- Employee info -->
+  <table class="info">
+    <tr>
+      <td class="label">NAME:</td>
+      <td><span class="underline">${employee.last_name}, ${employee.first_name} ${employee.middle_name || ""}</span></td>
+
+      <td style="width:40px;"></td>
+
+      <td class="label">OFFICE:</td>
+      <td><span class="underline small-line">${employee.office || "MO"}</span></td>
+    </tr>
+
+    <tr>
+      <td class="label">POSITION:</td>
+      <td><span class="underline">${employee.position || "Administrative Aide I"}</span></td>
+
+      <td></td>
+
+      <td class="label">FTD:</td>
+      <td><span class="underline small-line"></span></td>
+
+      <td style="width:20px;"></td>
+
+      <td class="label">STATUS:</td>
+      <td><span class="underline small-line">${employee.employment_status || "Permanent"}</span></td>
+    </tr>
+  </table>
+
+    <table class="leave">
+    <tbody>
+        <!-- Header row only once -->
+        <tr>
+        <td class="vertical col-narrow" rowspan="3">${'PERIOD'.split('').join('<br/>')}</td>
+        <td rowspan="3" style="width:120px; text-align: center">PARTICULARS</td>
+
+        <td style="text-align: center" colspan="4">VACATION LEAVE</td>
+        <td style="text-align: center" colspan="4">SICK LEAVE</td>
+
+        <td rowspan="3" style="width:90px; text-align: center">REMARKS</td>
+        </tr>
+
+        <tr>
+            <td class="col-narrow" rowspan="2" style="text-align: center">EARNED</td>
+            <td class="tiny" style="line-height: 10px; text-align: center">ABS. UND. W/P</td>
+            <td class="col-narrow" rowspan="2" style="text-align: center; width: 60px">BALANCE</td>
+            <td class="tiny" style="line-height: 10px; text-align: center">ABS. UND. WOP</td>
+
+            <td class="col-narrow" rowspan="2" style="text-align: center">EARNED</td>
+            <td class="tiny" style="text-align: center">ABS.<br/>UND.<br/>W/P</td>
+            <td class="col-narrow" rowspan="2" style="text-align: center; width: 60px">BALANCE</td>
+            <td class="tiny" style="text-align: center">ABS.<br/>UND.<br/>WOP</td>
+        </tr>
+
+        <tr>
+        <td></td><td></td><td></td><td></td>
+        </tr>
+
+        <!-- Leave data -->
+        ${leaveCards.map(lc => `
+        <tr>
+        <td class="tiny" style="white-space: nowrap;">${lc.period || ""}</td>
+        <td class="left">${lc.particulars || ""}</td>
+
+        <td class="tiny fontSize">${lc.vl_earned ?? ""}</td>
+        <td class="tiny fontSize">${lc.vl_used ?? ""}</td>
+        <td class="tiny fontSize" style="width: 60px">${lc.vl_balance ?? ""}</td>
+        <td class="tiny fontSize"></td>
+
+        <td class="tiny fontSize">${lc.sl_earned ?? ""}</td>
+        <td class="tiny fontSize">${lc.sl_used ?? ""}</td>
+        <td class="tiny fontSize" style="width: 60px">${lc.sl_balance ?? ""}</td>
+        <td class="tiny fontSize"></td>
+
+        <td class="remarks">${lc.remarks || ""}</td>
+        </tr>
+        `).join("")}
+    </tbody>
+    </table>
+
+</body>
+</html>
+`;
+
+    // 3️⃣ Convert HTML → PDF using Puppeteer
+    const tempPdfPath = tempExcelPath.replace(".xlsx", ".pdf");
+    const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox','--disable-setuid-sandbox'] });
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: "networkidle0" });
+    await page.pdf({
+      path: tempPdfPath,
+      format: "Letter",
+      printBackground: true,
+      landscape: false,
+      margin: { top: "0", bottom: "0", left: "0", right: "0" },
     });
+    await browser.close();
 
-    // Collect PDF data
-    const chunks = [];
-    doc.on('data', (chunk) => chunks.push(chunk));
-    
-    // Set fonts
-    doc.font('Helvetica');
-
-    // Header Section
-    doc.fontSize(14)
-       .text('Republic of the Philippines', { align: 'center' })
-       .moveDown(0.3);
-    doc.text('Province of Occidental Mindoro', { align: 'center' })
-       .moveDown(0.3);
-    doc.text('Municipality of Paluan', { align: 'center' })
-       .moveDown(1.5);
-    
-    // Title
-    doc.fontSize(21)
-       .font('Helvetica-Bold')
-       .text('EMPLOYEES LEAVE CARD', { align: 'center' })
-       .moveDown(2);
-
-    // Employee Information
-    doc.fontSize(12)
-       .font('Helvetica');
-    
-    // Name and Office
-    doc.text(`NAME: ${employee.last_name}, ${employee.first_name} ${employee.middle_name || ''}`, 50, doc.y);
-    doc.text(`OFFICE: ${employee.office || 'MO'}`, 400, doc.y);
-    doc.moveDown(1);
-    
-    // Position and Status
-    doc.text(`POSITION: ${employee.position || 'Administrative Aide I'}`, 50, doc.y);
-    doc.text(`STATUS: ${employee.employment_status || 'Permanent'}`, 400, doc.y);
-    doc.moveDown(2);
-
-    // Table Header
-    const startX = 50;
-    const startY = doc.y;
-    const rowHeight = 25;
-    const colWidths = [60, 120, 40, 40, 40, 40, 40, 40, 40, 40, 80]; // 11 columns
-    
-    // Draw table borders
-    let currentX = startX;
-    let currentY = startY;
-    
-    // Column headers (simplified version)
-    const headers = [
-      "PERIOD",
-      "PARTICULARS",
-      "VL\nEARNED",
-      "VL\nUSED",
-      "VL\nBALANCE",
-      "VL\nWOP",
-      "SL\nEARNED",
-      "SL\nUSED",
-      "SL\nBALANCE",
-      "SL\nWOP",
-      "REMARKS"
-    ];
-    
-    // Draw header row
-    doc.fontSize(9).font('Helvetica-Bold');
-    headers.forEach((header, i) => {
-      doc.rect(currentX, currentY, colWidths[i], rowHeight).stroke();
-      doc.text(header, currentX + 5, currentY + 8, {
-        width: colWidths[i] - 10,
-        align: 'center'
-      });
-      currentX += colWidths[i];
-    });
-    
-    // Data rows
-    doc.fontSize(8).font('Helvetica');
-    leaveCards.forEach((lc, rowIndex) => {
-      currentY += rowHeight;
-      currentX = startX;
-      
-      const rowData = [
-        lc.period || "",
-        lc.particulars || "",
-        lc.vl_earned || "",
-        lc.vl_used || "",
-        lc.vl_balance || "",
-        "", // VL WOP (empty)
-        lc.sl_earned || "",
-        lc.sl_used || "",
-        lc.sl_balance || "",
-        "", // SL WOP (empty)
-        lc.remarks || ""
-      ];
-      
-      // Draw cells for this row
-      rowData.forEach((cell, i) => {
-        doc.rect(currentX, currentY, colWidths[i], rowHeight).stroke();
-        doc.text(cell.toString(), currentX + 5, currentY + 8, {
-          width: colWidths[i] - 10,
-          align: i === 1 || i === 10 ? 'left' : 'center' // Left align for particulars and remarks
-        });
-        currentX += colWidths[i];
-      });
-      
-      // Check for page break
-      if (currentY > 700) {
-        doc.addPage();
-        currentY = 50;
-      }
-    });
-
-    // Add footer
-    doc.addPage();
-    doc.fontSize(10)
-       .text('--- End of Leave Card ---', { align: 'center', underline: true })
-       .moveDown(1);
-    
-    // Finalize PDF
-    doc.end();
-
-    // Wait for PDF to finish
-    const pdfBuffer = await new Promise((resolve) => {
-      doc.on('end', () => {
-        const buffer = Buffer.concat(chunks);
-        resolve(buffer);
-      });
-    });
-
-    // 3️⃣ Send back PDF
+    // 4️⃣ Send back PDF
+    const fileBuffer = fs.readFileSync(tempPdfPath);
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${employee.last_name}, ${employee.first_name}.pdf"`);
-    res.send(pdfBuffer);
+    res.send(fileBuffer);
 
-    // 4️⃣ Cleanup Excel file
-    try { 
-      fs.unlinkSync(tempExcelPath); 
-    } catch(e) { 
-      console.log("Cleanup error:", e.message);
-    }
+    // cleanup
+    try { fs.unlinkSync(tempExcelPath); } catch(e){/*ignore*/ }
+    try { fs.unlinkSync(tempPdfPath); } catch(e){/*ignore*/ }
 
   } catch (error) {
     console.error("❌ Export failed:", error);
-    res.status(500).json({ 
-      error: "PDF generation failed",
-      message: error.message 
-    });
+    res.status(500).send("Internal Server Error");
   }
 });
 
