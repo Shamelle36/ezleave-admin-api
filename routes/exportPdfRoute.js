@@ -2,11 +2,20 @@ import express from "express";
 import ExcelJS from "exceljs";
 import fs from "fs";
 import path from "path";
-import htmlPdf from "html-pdf-node";
+import chromium from "@sparticuz/chromium-min"; // Chromium for serverless
+import puppeteerCore from "puppeteer-core"; // Use puppeteer-core instead of puppeteer
 
 const router = express.Router();
 
+// Configure Chromium for Render
+const isRender = process.env.RENDER === 'true';
+const executablePath = isRender 
+  ? await chromium.executablePath()
+  : process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser';
+
 router.post("/export-pdf", async (req, res) => {
+  let browser = null;
+  
   try {
     const { employee, leaveCards } = req.body;
 
@@ -242,33 +251,42 @@ router.post("/export-pdf", async (req, res) => {
 </html>
 `;
 
-    // 3️⃣ Convert HTML → PDF using html-pdf-node (Render compatible)
+    // 3️⃣ Convert HTML → PDF using Puppeteer-core with Render-compatible setup
     const tempPdfPath = tempExcelPath.replace(".xlsx", ".pdf");
     
-    const options = {
+    // Configure browser for Render environment
+    const browserArgs = isRender 
+      ? chromium.args
+      : ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'];
+    
+    browser = await puppeteerCore.launch({
+      executablePath,
+      args: browserArgs,
+      headless: chromium.headless,
+    });
+    
+    const page = await browser.newPage();
+    
+    // Set content and wait for it to load
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+    
+    // Generate PDF
+    const pdf = await page.pdf({
+      path: tempPdfPath,
       format: 'Letter',
       printBackground: true,
-      landscape: false,
-      margin: {
-        top: "0",
-        bottom: "0",
-        left: "0",
-        right: "0"
-      }
-    };
-
-    const file = { content: html };
+      margin: { top: '0', bottom: '0', left: '0', right: '0' },
+    });
     
-    // Generate PDF buffer
-    const pdfBuffer = await htmlPdf.generatePdf(file, options);
-    
-    // Save to file (optional - only if you need the file)
-    fs.writeFileSync(tempPdfPath, pdfBuffer);
+    await browser.close();
+    browser = null;
 
     // 4️⃣ Send back PDF
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${employee.last_name}, ${employee.first_name}.pdf"`);
-    res.send(pdfBuffer);
+    
+    // Send the PDF buffer directly
+    res.send(pdf);
 
     // cleanup
     try { fs.unlinkSync(tempExcelPath); } catch(e){/*ignore*/ }
@@ -276,7 +294,21 @@ router.post("/export-pdf", async (req, res) => {
 
   } catch (error) {
     console.error("❌ Export failed:", error);
-    res.status(500).send("Internal Server Error");
+    
+    // Ensure browser is closed even on error
+    if (browser) {
+      try {
+        await browser.close();
+      } catch (e) {
+        console.error("Error closing browser:", e);
+      }
+    }
+    
+    res.status(500).json({ 
+      error: "Internal Server Error", 
+      message: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 
