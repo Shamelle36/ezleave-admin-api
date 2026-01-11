@@ -18,6 +18,7 @@ import {
   updateLeaveType,
   deleteLeaveType,
   getLeaveTypeDetails,
+  getEmployeeLeaveHistory
 } from "../controllers/employeeController.js";
 import { signatureStorage } from "../config/cloudinary.js";
 import multer from "multer";
@@ -64,5 +65,7 @@ router.put('/leave-types/:oldAbbreviation', updateLeaveType);
 router.delete('/leave-types/:abbreviation', deleteLeaveType);
 router.get('/leave-types/:abbreviation', getLeaveTypeDetails);
 router.get('/leave-types', getAllLeaveTypes);
+
+router.get('/:id/leave-history', getEmployeeLeaveHistory);
 
 export default router;

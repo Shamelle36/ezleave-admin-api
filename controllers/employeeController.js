@@ -1124,3 +1124,129 @@ export const getAllLeaveTypes = async (req, res) => {
     });
   }
 };
+
+export const getEmployeeLeaveHistory = async (req, res) => {
+  const { id } = req.params;
+  
+  try {
+    // Get employee details first
+    const [employee] = await sql`
+      SELECT id, first_name, last_name, user_id
+      FROM employee_list
+      WHERE id = ${id}
+    `;
+
+    if (!employee) {
+      return res.status(404).json({ error: "Employee not found" });
+    }
+
+    // Get all leave applications for this employee
+    const leaveHistory = await sql`
+      SELECT 
+        la.id,
+        la.date_filing,
+        la.leave_type,
+        la.number_of_days,
+        la.inclusive_dates,
+        la.details,
+        la.status,
+        la.approver_name,
+        la.approver_date,
+        la.office_head_status,
+        la.office_head_date,
+        la.hr_status,
+        la.hr_date,
+        la.mayor_status,
+        la.mayor_date,
+        la.remarks,
+        la.created_at,
+        la.updated_at,
+        -- Extract start and end dates from inclusive_dates
+        LOWER(la.inclusive_dates)::date as start_date,
+        (UPPER(la.inclusive_dates) - INTERVAL '1 day')::date as end_date,
+        -- Format dates for display
+        TO_CHAR(LOWER(la.inclusive_dates), 'Mon DD, YYYY') as formatted_start_date,
+        TO_CHAR((UPPER(la.inclusive_dates) - INTERVAL '1 day'), 'Mon DD, YYYY') as formatted_end_date,
+        TO_CHAR(la.date_filing, 'Mon DD, YYYY') as formatted_filing_date,
+        TO_CHAR(la.approver_date, 'Mon DD, YYYY') as formatted_approval_date
+      FROM leave_applications la
+      WHERE la.user_id = ${employee.user_id}
+      ORDER BY la.date_filing DESC
+    `;
+
+    // Transform the data for easier consumption
+    const formattedHistory = leaveHistory.map(leave => ({
+      id: leave.id,
+      leaveType: leave.leave_type,
+      filingDate: leave.date_filing,
+      formattedFilingDate: leave.formatted_filing_date,
+      startDate: leave.start_date,
+      endDate: leave.end_date,
+      formattedStartDate: leave.formatted_start_date,
+      formattedEndDate: leave.formatted_end_date,
+      duration: parseFloat(leave.number_of_days).toFixed(1),
+      status: leave.status,
+      details: leave.details,
+      remarks: leave.remarks,
+      approver: leave.approver_name,
+      approvalDate: leave.approver_date,
+      formattedApprovalDate: leave.formatted_approval_date,
+      // Approval status at different levels
+      approvalStatus: {
+        officeHead: {
+          status: leave.office_head_status,
+          date: leave.office_head_date
+        },
+        hr: {
+          status: leave.hr_status,
+          date: leave.hr_date
+        },
+        mayor: {
+          status: leave.mayor_status,
+          date: leave.mayor_date
+        }
+      },
+      createdAt: leave.created_at,
+      updatedAt: leave.updated_at
+    }));
+
+    // Calculate summary statistics
+    const summary = {
+      totalLeaves: formattedHistory.length,
+      approvedLeaves: formattedHistory.filter(l => l.status === 'Approved').length,
+      pendingLeaves: formattedHistory.filter(l => l.status === 'Pending').length,
+      rejectedLeaves: formattedHistory.filter(l => l.status === 'Rejected').length,
+      totalDaysUsed: formattedHistory
+        .filter(l => l.status === 'Approved')
+        .reduce((sum, leave) => sum + parseFloat(leave.duration), 0),
+      byLeaveType: formattedHistory.reduce((acc, leave) => {
+        acc[leave.leaveType] = (acc[leave.leaveType] || 0) + 1;
+        return acc;
+      }, {}),
+      byYear: formattedHistory.reduce((acc, leave) => {
+        const year = new Date(leave.filingDate).getFullYear();
+        acc[year] = (acc[year] || 0) + 1;
+        return acc;
+      }, {})
+    };
+
+    res.json({
+      success: true,
+      employee: {
+        id: employee.id,
+        name: `${employee.first_name} ${employee.last_name}`
+      },
+      leaveHistory: formattedHistory,
+      summary: summary,
+      totalRecords: formattedHistory.length
+    });
+
+  } catch (error) {
+    console.error("❌ Error fetching leave history:", error);
+    res.status(500).json({ 
+      success: false,
+      error: "Failed to fetch leave history",
+      details: error.message 
+    });
+  }
+};
