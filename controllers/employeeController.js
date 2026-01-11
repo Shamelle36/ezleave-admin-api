@@ -916,14 +916,13 @@ export const addLeaveTypeToAllEmployees = async (req, res) => {
   }
 };
 
-// controllers/employeeController.js
 
 // 📌 Get all distinct leave types from leave_entitlements
 export const getAllLeaveTypes = async (req, res) => {
   try {
     // Fetch distinct leave types from leave_entitlements
     const leaveTypes = await sql`
-      SELECT DISTINCT leave_type 
+      SELECT DISTINCT leave_type, total_days
       FROM leave_entitlements 
       ORDER BY leave_type;
     `;
