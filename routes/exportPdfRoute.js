@@ -2,7 +2,7 @@ import express from "express";
 import ExcelJS from "exceljs";
 import fs from "fs";
 import path from "path";
-import puppeteer from "puppeteer";
+import htmlPdf from "html-pdf-node";
 
 const router = express.Router();
 
@@ -242,25 +242,33 @@ router.post("/export-pdf", async (req, res) => {
 </html>
 `;
 
-    // 3️⃣ Convert HTML → PDF using Puppeteer
+    // 3️⃣ Convert HTML → PDF using html-pdf-node (Render compatible)
     const tempPdfPath = tempExcelPath.replace(".xlsx", ".pdf");
-    const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox','--disable-setuid-sandbox'] });
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle0" });
-    await page.pdf({
-      path: tempPdfPath,
-      format: "Letter",
+    
+    const options = {
+      format: 'Letter',
       printBackground: true,
       landscape: false,
-      margin: { top: "0", bottom: "0", left: "0", right: "0" },
-    });
-    await browser.close();
+      margin: {
+        top: "0",
+        bottom: "0",
+        left: "0",
+        right: "0"
+      }
+    };
+
+    const file = { content: html };
+    
+    // Generate PDF buffer
+    const pdfBuffer = await htmlPdf.generatePdf(file, options);
+    
+    // Save to file (optional - only if you need the file)
+    fs.writeFileSync(tempPdfPath, pdfBuffer);
 
     // 4️⃣ Send back PDF
-    const fileBuffer = fs.readFileSync(tempPdfPath);
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${employee.last_name}, ${employee.first_name}.pdf"`);
-    res.send(fileBuffer);
+    res.send(pdfBuffer);
 
     // cleanup
     try { fs.unlinkSync(tempExcelPath); } catch(e){/*ignore*/ }

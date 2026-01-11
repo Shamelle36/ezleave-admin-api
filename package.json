@@ -23,6 +23,7 @@
     "exceljs": "^4.4.0",
     "express": "^5.1.0",
     "googleapis": "^165.0.0",
+    "html-pdf-node": "^1.0.8",
     "image-size": "^2.0.2",
     "jsonwebtoken": "^9.0.2",
     "libreoffice-convert": "^1.7.0",
