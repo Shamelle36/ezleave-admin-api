@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-core"; // Changed from puppeteer to puppeteer-core
+import chromium from "@sparticuz/chromium"; // Add this import
 import sql from "../config/db.js";
 import sharp from 'sharp';
 
@@ -1104,20 +1105,38 @@ const mayorSignature = signature_method === "upload" && requesting_role === "may
     </html>
     `;
 
-    // Rest of your existing code remains exactly the same...
-    browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        "--no-sandbox", 
-        "--disable-setuid-sandbox", 
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--disable-web-security",
-        "--disable-features=VizDisplayCompositor",
-        "--disable-software-rasterizer"
-      ],
-      timeout: 120000
-    });
+    // Configure Puppeteer for Render.com
+    let browserConfig;
+    
+    if (process.env.NODE_ENV === 'production' || process.env.RENDER) {
+      // Production mode on Render.com
+      const executablePath = await chromium.executablePath();
+      
+      browserConfig = {
+        args: chromium.args,
+        defaultViewport: chromium.defaultViewport,
+        executablePath: executablePath,
+        headless: chromium.headless,
+        ignoreHTTPSErrors: true,
+      };
+    } else {
+      // Development mode (local)
+      browserConfig = {
+        headless: true,
+        args: [
+          "--no-sandbox", 
+          "--disable-setuid-sandbox", 
+          "--disable-dev-shm-usage",
+          "--disable-gpu",
+          "--disable-web-security",
+          "--disable-features=VizDisplayCompositor",
+          "--disable-software-rasterizer"
+        ],
+        timeout: 120000
+      };
+    }
+
+    browser = await puppeteer.launch(browserConfig);
 
     const page = await browser.newPage();
     
@@ -1217,7 +1236,6 @@ const mayorSignature = signature_method === "upload" && requesting_role === "may
       
       console.log(`✅ Existing PDF record ${existingId} updated`);
     } else {
-      // INSERT new record if none exists
       const pdfVersion = await sql`
         INSERT INTO leave_pdf_documents (
           leave_application_id,
@@ -1352,7 +1370,6 @@ export const saveSignature = async (req, res) => {
   }
 };
 
-// Get all PDFs for a leave application
 export async function getLeavePDFs(req, res) {
   try {
     const { leave_application_id } = req.params;
