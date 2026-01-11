@@ -112,8 +112,8 @@ router.post("/export-pdf", async (req, res) => {
 
     pdfDoc.moveDown(3);
 
-    // Create Leave Table
-    const tableTop = pdfDoc.y;
+    // Create Leave Table - FIXED: Use let instead of const for tableTop
+    let tableTop = pdfDoc.y;
     const cellPadding = 4;
     const colWidths = [60, 120, 40, 40, 40, 40, 40, 40, 40, 40, 90]; // 11 columns
     const rowHeight = 25;
@@ -162,13 +162,15 @@ router.post("/export-pdf", async (req, res) => {
     xPos += colWidths[1];
     
     // VACATION LEAVE (spans 4 columns)
-    drawCell(xPos, yPosTable, colWidths[2] + colWidths[3] + colWidths[4] + colWidths[5], rowHeight, 'VACATION LEAVE', { align: 'center', fontSize: 10 });
+    const vacationLeaveWidth = colWidths[2] + colWidths[3] + colWidths[4] + colWidths[5];
+    drawCell(xPos, yPosTable, vacationLeaveWidth, rowHeight, 'VACATION LEAVE', { align: 'center', fontSize: 10 });
     
     // SICK LEAVE (spans 4 columns)
-    drawCell(xPos + colWidths[2] + colWidths[3] + colWidths[4] + colWidths[5], yPosTable, colWidths[6] + colWidths[7] + colWidths[8] + colWidths[9], rowHeight, 'SICK LEAVE', { align: 'center', fontSize: 10 });
+    const sickLeaveWidth = colWidths[6] + colWidths[7] + colWidths[8] + colWidths[9];
+    drawCell(xPos + vacationLeaveWidth, yPosTable, sickLeaveWidth, rowHeight, 'SICK LEAVE', { align: 'center', fontSize: 10 });
     
     // REMARKS
-    drawCell(xPos + colWidths[2] + colWidths[3] + colWidths[4] + colWidths[5] + colWidths[6] + colWidths[7] + colWidths[8] + colWidths[9], yPosTable, colWidths[10], rowHeight * 3, 'REMARKS', { align: 'center', fontSize: 10 });
+    drawCell(xPos + vacationLeaveWidth + sickLeaveWidth, yPosTable, colWidths[10], rowHeight * 3, 'REMARKS', { align: 'center', fontSize: 10 });
 
     // Row 2
     yPosTable += rowHeight;
@@ -210,7 +212,22 @@ router.post("/export-pdf", async (req, res) => {
       if (yPosTable > 700) {
         pdfDoc.addPage();
         yPosTable = 50;
-        tableTop = yPosTable;
+        tableTop = yPosTable; // This was causing the error - now tableTop is let, not const
+        
+        // Redraw headers on new page
+        xPos = 20;
+        drawCell(xPos, yPosTable, colWidths[0], rowHeight * 3, 'PERIOD', { align: 'center', rotate: true });
+        xPos += colWidths[0];
+        
+        drawCell(xPos, yPosTable, colWidths[1], rowHeight * 3, 'PARTICULARS', { align: 'center', fontSize: 10 });
+        xPos += colWidths[1];
+        
+        drawCell(xPos, yPosTable, vacationLeaveWidth, rowHeight, 'VACATION LEAVE', { align: 'center', fontSize: 10 });
+        drawCell(xPos + vacationLeaveWidth, yPosTable, sickLeaveWidth, rowHeight, 'SICK LEAVE', { align: 'center', fontSize: 10 });
+        drawCell(xPos + vacationLeaveWidth + sickLeaveWidth, yPosTable, colWidths[10], rowHeight * 3, 'REMARKS', { align: 'center', fontSize: 10 });
+        
+        // Skip to data row position
+        yPosTable += rowHeight * 3;
       }
       
       xPos = 20;
@@ -282,7 +299,8 @@ router.post("/export-pdf", async (req, res) => {
     
     res.status(500).json({ 
       error: "Internal Server Error", 
-      message: error.message
+      message: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
