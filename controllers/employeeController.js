@@ -829,36 +829,24 @@ export const addLeaveType = async (req, res) => {
       });
     }
 
-    // Get DISTINCT employees who already have leave entitlements
-    let employees = await sql`
-      SELECT DISTINCT user_id as id 
-      FROM leave_entitlements 
-      WHERE year = ${year}
-      ORDER BY user_id
+    // Get ALL eligible employees from employee_list
+    const eligibleStatuses = ["Temporary", "Permanent", "Contractual", "Casual", "Coterminous", "Job Order"];
+    
+    const employees = await sql`
+      SELECT id FROM employee_list 
+      WHERE employment_status = ANY(${eligibleStatuses})
+      ORDER BY id
     `;
 
-    console.log(`✅ Found ${employees.length} employees with existing leave entitlements`);
-
-    // If no employees found, get employees from employee_list based on employment status
-    if (employees.length === 0) {
-      console.log("⚠️ No employees found with existing leave entitlements. Checking eligible employees...");
-      
-      const eligibleStatuses = ["Temporary", "Permanent", "Contractual", "Casual", "Coterminous"];
-      
-      employees = await sql`
-        SELECT id FROM employee_list 
-        WHERE employment_status = ANY(${eligibleStatuses})
-      `;
-      
-      console.log(`✅ Found ${employees.length} eligible employees from employee_list`);
-    }
+    console.log(`✅ Found ${employees.length} eligible employees from employee_list`);
 
     let addedCount = 0;
+    let skippedCount = 0;
 
     // Add leave type to each employee
     for (const employee of employees) {
       try {
-        await sql`
+        const result = await sql`
           INSERT INTO leave_entitlements (
             user_id,
             leave_type,
@@ -876,20 +864,23 @@ export const addLeaveType = async (req, res) => {
             NOW(),
             NOW()
           )
-          ON CONFLICT (user_id, leave_type, year) 
-          DO UPDATE SET 
-            total_days = ${days},
-            updated_at = NOW()
+          ON CONFLICT (user_id, leave_type, year) DO NOTHING
+          RETURNING *;
         `;
         
-        addedCount++;
+        if (result.length > 0) {
+          addedCount++;
+        } else {
+          skippedCount++;
+        }
         
       } catch (error) {
         console.error(`Error adding leave type for employee ${employee.id}:`, error);
+        skippedCount++;
       }
     }
 
-    console.log(`✅ Leave type "${name}" (${abbreviation}) added to ${addedCount} employees`);
+    console.log(`✅ Leave type "${name}" (${abbreviation}) added to ${addedCount} employees, skipped ${skippedCount}`);
 
     res.status(200).json({
       success: true,
@@ -901,6 +892,7 @@ export const addLeaveType = async (req, res) => {
       },
       stats: {
         added: addedCount,
+        skipped: skippedCount,
         total: employees.length
       }
     });
