@@ -1,8 +1,9 @@
 import cron from "node-cron";
 import { autoEarnLeaveCredits } from "./controllers/leaveCardController.js";
 
+// Schedule: 12:01 AM on the 1st day of every month
 cron.schedule(
-  "55 12 13 * *",  // Every 13th of the month at 12:55 PM Manila time
+  "1 0 1 * *",  // minute 1, hour 0, day 1 of every month
   async () => {
     console.log("🔔 CRON TRIGGERED — Monthly Leave Earn PH time");
 
