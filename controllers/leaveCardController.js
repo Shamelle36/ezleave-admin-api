@@ -2,6 +2,8 @@ import multer from "multer";
 import XLSX from "xlsx";
 import fs from "fs";
 import sql from "../config/db.js";
+import { sendPushToUser } from "../utils/fcm.js";
+import { sendAndSaveNotification } from "../utils/notificationService.js";
 
 // 📁 Multer config
 const storage = multer.diskStorage({
@@ -207,7 +209,7 @@ export const autoEarnLeaveCredits = async () => {
     console.log("⏳ Running monthly leave credit job...");
 
     // Get all employees
-    const employees = await sql`SELECT id FROM employee_list`;
+    const employees = await sql`SELECT id, user_id, first_name, last_name FROM employee_list`;
 
     const today = new Date();
 
@@ -222,7 +224,6 @@ export const autoEarnLeaveCredits = async () => {
 
     // month is now 1–12
     const lastDay = new Date(year, month, 0).getDate();
-
     const period = `${month}/1-${lastDay}/${year}`;
 
     for (const emp of employees) {
@@ -243,7 +244,7 @@ export const autoEarnLeaveCredits = async () => {
         continue;
       }
 
-      // Get current balances (employee must exist)
+      // Get current balances
       const lastBalance = await sql`
         SELECT vl_balance, sl_balance
         FROM leave_cards
@@ -252,7 +253,6 @@ export const autoEarnLeaveCredits = async () => {
         LIMIT 1;
       `;
 
-      // If employee has no leave_card history → SKIP
       if (lastBalance.length === 0) {
         console.log(`⏭ Skipped — No leave card record yet | Emp: ${empId}`);
         continue;
@@ -264,6 +264,7 @@ export const autoEarnLeaveCredits = async () => {
       const newVlBalance = vlBalance + 1.25;
       const newSlBalance = slBalance + 1.25;
 
+      // Insert leave credit
       await sql`
         INSERT INTO leave_cards (
           employee_id, period, particulars,
@@ -280,6 +281,46 @@ export const autoEarnLeaveCredits = async () => {
       `;
 
       console.log(`✅ Credited 1.25 VL/SL for Emp ID: ${empId}`);
+
+      // === PUSH NOTIFICATION TO EMPLOYEE ===
+      const messageTitle = "Monthly Leave Credits Added 🎉";
+      const messageBody = `Hi ${emp.first_name}, your VL and SL for ${period} have been credited: 1.25 each.`;
+
+      try {
+        // 1️⃣ Send push notification (FCM)
+        const pushResult = await sendPushToUser(
+          emp.user_id,
+          messageTitle,
+          messageBody,
+          {
+            type: 'leave_credited',
+            employee_id: empId,
+            period,
+            vl_earned: 1.25,
+            sl_earned: 1.25,
+            screen: 'leave_status'
+          }
+        );
+
+        console.log("📱 Push notification result:", pushResult);
+
+        // 2️⃣ Save notification to DB
+        await sql`
+          INSERT INTO notifications (
+            user_id, title, message, created_at
+          )
+          VALUES (
+            ${emp.user_id},
+            ${messageTitle},
+            ${messageBody},
+            NOW()
+          );
+        `;
+
+        console.log(`🔔 Notification sent and saved for Emp ID: ${empId}`);
+      } catch (notifError) {
+        console.error("❌ Error sending notification for Emp ID:", empId, notifError);
+      }
     }
 
     console.log("🎉 Monthly leave credit job completed.");

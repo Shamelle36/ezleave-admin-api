@@ -2,7 +2,7 @@ import cron from "node-cron";
 import { autoEarnLeaveCredits } from "./controllers/leaveCardController.js";
 
 cron.schedule(
-  "5 0 1 * *",  
+  "55 12 13 * *",  // Every 13th of the month at 12:55 PM Manila time
   async () => {
     console.log("🔔 CRON TRIGGERED — Monthly Leave Earn PH time");
 
@@ -14,6 +14,6 @@ cron.schedule(
     }
   },
   {
-    timezone: "Asia/Manila", 
+    timezone: "Asia/Manila",
   }
 );
