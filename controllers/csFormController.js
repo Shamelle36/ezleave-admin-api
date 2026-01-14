@@ -197,7 +197,7 @@ export const generateCSForm = async (req, res) => {
         lr.hr_signature,
         lr.mayor_signature,
         lr.subtype,
-        lr.signature_url
+        lr.signature_url,
         
         -- Get earned values for current year
         (SELECT period FROM leave_cards WHERE employee_id = el.id AND period LIKE '%2025%' ORDER BY id DESC LIMIT 1) as period,
