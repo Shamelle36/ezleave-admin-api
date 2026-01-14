@@ -135,8 +135,6 @@ export const removeSignatureBackground = async (req, res) => {
   }
 };
 
-// ... existing code ...
-
 export const generateCSForm = async (req, res) => {
   let browser;
   let pdfBuffer;
@@ -197,7 +195,6 @@ export const generateCSForm = async (req, res) => {
         lr.hr_signature,
         lr.mayor_signature,
         lr.subtype,
-        lr.signature_url,
         
         -- Get earned values for current year
         (SELECT period FROM leave_cards WHERE employee_id = el.id AND period LIKE '%2025%' ORDER BY id DESC LIMIT 1) as period,
@@ -248,8 +245,7 @@ export const generateCSForm = async (req, res) => {
       vacation_leave_earned = "",
       sick_leave_earned = "",
       vacation_leave_balance = "",
-      sick_leave_balance = "",
-      signature_url = ""
+      sick_leave_balance = ""
     } = leaveApplication;
 
     // Determine if HR has approved - only then show leave credit values in 7.A
@@ -524,36 +520,9 @@ const mayorSignature = signature_method === "upload" && requesting_role === "may
     console.log("Recommendation name:", recommendationName);
     console.log("HR approver name:", hrApproverFullName);
     console.log("Mayor display name:", displayMayorName);
-    console.log("Applicant signature URL:", signature_url);
     console.log("=== END DEBUG INFO ===");    
 
-    // Check if signature_url is a base64 string and prepare it for display
-    let applicantSignatureHtml = '';
-    if (signature_url && signature_url.startsWith('data:image/')) {
-      // It's already a base64 data URL
-      applicantSignatureHtml = `
-        <div style="text-align: center; margin-top: 8px;">
-          <img 
-            src="${signature_url}" 
-            style="max-width: 120px; max-height: 40px; object-fit: contain;"
-            onerror="this.style.display='none';"
-          />
-        </div>
-      `;
-    } else if (signature_url && signature_url.startsWith('http')) {
-      // It's a URL, use it directly
-      applicantSignatureHtml = `
-        <div style="text-align: center; margin-top: 8px;">
-          <img 
-            src="${signature_url}" 
-            style="max-width: 120px; max-height: 40px; object-fit: contain;"
-            onerror="this.style.display='none';"
-          />
-        </div>
-      `;
-    }
-
-    // FIXED: Updated HTML with applicant signature
+    // FIXED: Updated HTML with compact signature sections
     const htmlContent = `
     <!doctype html>
     <html>
@@ -923,9 +892,6 @@ const mayorSignature = signature_method === "upload" && requesting_role === "may
             <td style="padding:6px; border-top: none;"> <!-- Reduced padding -->
               <div style="margin-bottom: 5px; font-size: 13px"><span class="checkbox">${commutationStatus === "Not Requested" ? "X" : ""}</span> Not Requested</div>
               <div style="font-size: 13px"><span class="checkbox">${commutationStatus === "Requested" ? "X" : ""}</span> Requested</div>
-              
-              <!-- APPLICANT SIGNATURE SECTION -->
-              ${applicantSignatureHtml}
               <div class="full-width-underline" style="margin-top: 15px;"></div> <!-- Reduced margin -->
               <div style="font-size: 13px" class="signature">(Signature of Applicant)</div>
             </td>
@@ -1338,8 +1304,6 @@ res.send(pdfBuffer);
     });
   }
 };
-
-// ... rest of the code remains the same ...
 
 // NEW: Add this function to save signatures to the database
 export const saveSignature = async (req, res) => {
