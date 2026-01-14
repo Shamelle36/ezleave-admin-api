@@ -135,6 +135,8 @@ export const removeSignatureBackground = async (req, res) => {
   }
 };
 
+// ... existing code ...
+
 export const generateCSForm = async (req, res) => {
   let browser;
   let pdfBuffer;
@@ -195,6 +197,7 @@ export const generateCSForm = async (req, res) => {
         lr.hr_signature,
         lr.mayor_signature,
         lr.subtype,
+        lr.signature_url
         
         -- Get earned values for current year
         (SELECT period FROM leave_cards WHERE employee_id = el.id AND period LIKE '%2025%' ORDER BY id DESC LIMIT 1) as period,
@@ -245,7 +248,8 @@ export const generateCSForm = async (req, res) => {
       vacation_leave_earned = "",
       sick_leave_earned = "",
       vacation_leave_balance = "",
-      sick_leave_balance = ""
+      sick_leave_balance = "",
+      signature_url = ""
     } = leaveApplication;
 
     // Determine if HR has approved - only then show leave credit values in 7.A
@@ -510,6 +514,40 @@ const mayorSignature = signature_method === "upload" && requesting_role === "may
       }
     }
 
+    // Check if signature_url is a base64 string and prepare it for display
+    let applicantSignatureHtml = '';
+    if (signature_url) {
+      if (signature_url.startsWith('data:image/')) {
+        // It's already a base64 data URL
+        applicantSignatureHtml = `
+          <div class="compact-signature" style="margin-top: 8px;">
+            <img 
+              src="${signature_url}" 
+              style="max-width: 120px; max-height: 40px; object-fit: contain;"
+              onerror="this.style.display='none'; this.parentNode.innerHTML='<div style=\\'border-bottom: 1px solid #000; width: 150px; height: 12px; margin-top: 8px;\\'></div>';"
+            />
+          </div>
+        `;
+      } else if (signature_url.startsWith('http')) {
+        // It's a URL, we'll need to convert it to base64 or handle differently
+        // For now, we'll use it as-is and let the browser handle it
+        applicantSignatureHtml = `
+          <div class="compact-signature" style="margin-top: 8px;">
+            <img 
+              src="${signature_url}" 
+              style="max-width: 120px; max-height: 40px; object-fit: contain;"
+              onerror="this.style.display='none'; this.parentNode.innerHTML='<div style=\\'border-bottom: 1px solid #000; width: 150px; height: 12px; margin-top: 8px;\\'></div>';"
+            />
+          </div>
+        `;
+      } else {
+        // Fallback to just showing the name
+        applicantSignatureHtml = `<div style="border-bottom: 1px solid #000; width: 150px; height: 12px; margin-top: 8px;"></div>`;
+      }
+    } else {
+      // No signature, just show a line
+      applicantSignatureHtml = `<div style="border-bottom: 1px solid #000; width: 150px; height: 12px; margin-top: 8px;"></div>`;
+    }
 
     console.log("=== SIGNATURE DEBUG INFO ===");
     console.log("Requesting role:", requesting_role);
@@ -520,9 +558,10 @@ const mayorSignature = signature_method === "upload" && requesting_role === "may
     console.log("Recommendation name:", recommendationName);
     console.log("HR approver name:", hrApproverFullName);
     console.log("Mayor display name:", displayMayorName);
+    console.log("Applicant signature URL present:", !!signature_url);
     console.log("=== END DEBUG INFO ===");    
 
-    // FIXED: Updated HTML with compact signature sections
+    // FIXED: Updated HTML with compact signature sections INCLUDING APPLICANT SIGNATURE
     const htmlContent = `
     <!doctype html>
     <html>
@@ -669,6 +708,33 @@ const mayorSignature = signature_method === "upload" && requesting_role === "may
         .compact-signature-title {
           font-size: 11px; /* Reduced from 12px */
           margin-top: 1px; /* Reduced from 3px */
+          text-align: center;
+        }
+
+        /* Applicant signature specific */
+        .applicant-signature-container {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          margin-top: 8px;
+        }
+        
+        .applicant-signature-image {
+          max-width: 120px;
+          max-height: 40px;
+          object-fit: contain;
+        }
+        
+        .applicant-name {
+          text-align: center;
+          margin-top: 2px;
+          font-size: 11px;
+          font-weight: bold;
+        }
+        
+        .applicant-title {
+          font-size: 10px;
+          margin-top: 1px;
           text-align: center;
         }
 
@@ -892,8 +958,13 @@ const mayorSignature = signature_method === "upload" && requesting_role === "may
             <td style="padding:6px; border-top: none;"> <!-- Reduced padding -->
               <div style="margin-bottom: 5px; font-size: 13px"><span class="checkbox">${commutationStatus === "Not Requested" ? "X" : ""}</span> Not Requested</div>
               <div style="font-size: 13px"><span class="checkbox">${commutationStatus === "Requested" ? "X" : ""}</span> Requested</div>
-              <div class="full-width-underline" style="margin-top: 15px;"></div> <!-- Reduced margin -->
-              <div style="font-size: 13px" class="signature">(Signature of Applicant)</div>
+              
+              <!-- APPLICANT SIGNATURE SECTION -->
+              <div class="applicant-signature-container">
+                ${applicantSignatureHtml}
+                <div style="font-size: 13px" class="signature">(Signature of Applicant)</div>
+                <div class="applicant-name">${first_name} ${middle_name ? middle_name.charAt(0) + '.' : ''} ${last_name}</div>
+              </div>
             </td>
           </tr>
         </table>
@@ -1304,6 +1375,8 @@ res.send(pdfBuffer);
     });
   }
 };
+
+// ... rest of the code remains the same ...
 
 // NEW: Add this function to save signatures to the database
 export const saveSignature = async (req, res) => {
