@@ -1156,10 +1156,10 @@ const mayorSignature = signature_method === "upload" && requesting_role === "may
     
     await page.setRequestInterception(true);
     page.on('request', (req) => {
-      if (req.resourceType() === 'image' || req.resourceType() === 'font' || req.resourceType() === 'stylesheet') {
+      if (req.resourceType() === 'font' || req.resourceType() === 'stylesheet') {
         req.abort();
       } else {
-        req.continue();
+        req.continue(); // Allow images and other resources
       }
     });
 
