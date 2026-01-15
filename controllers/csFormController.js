@@ -903,7 +903,7 @@ const mayorSignature = signature_method === "upload" && requesting_role === "may
                   />
                 </div>
               ` : ''}
-              <div class="full-width-underline" style="margin-top: 15px;"></div> <!-- Reduced margin -->
+              <div class="full-width-underline" style="margin-top: 15px;"></div>
               <div style="font-size: 13px" class="signature">(Signature of Applicant)</div>
             </td>
           </tr>
