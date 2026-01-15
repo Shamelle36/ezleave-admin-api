@@ -151,7 +151,8 @@ export const generateCSForm = async (req, res) => {
       user_data,
       signature_data,
       signature_method,
-      save_to_db = true
+      save_to_db = true,
+      signature_url
     } = req.body;
 
     if (!leave_application_id) {
@@ -195,6 +196,7 @@ export const generateCSForm = async (req, res) => {
         lr.hr_signature,
         lr.mayor_signature,
         lr.subtype,
+        lr.signature_url,
         
         -- Get earned values for current year
         (SELECT period FROM leave_cards WHERE employee_id = el.id AND period LIKE '%2025%' ORDER BY id DESC LIMIT 1) as period,
@@ -893,6 +895,11 @@ const mayorSignature = signature_method === "upload" && requesting_role === "may
               <div style="margin-bottom: 5px; font-size: 13px"><span class="checkbox">${commutationStatus === "Not Requested" ? "X" : ""}</span> Not Requested</div>
               <div style="font-size: 13px"><span class="checkbox">${commutationStatus === "Requested" ? "X" : ""}</span> Requested</div>
               <div class="full-width-underline" style="margin-top: 15px;"></div> <!-- Reduced margin -->
+              ${signature_url ? `
+                <div style="font-size: 8px; color: #666; margin-bottom: 2px; word-break: break-all; text-align: center;">
+                  ${signature_url}
+                </div>
+              ` : ''}
               <div style="font-size: 13px" class="signature">(Signature of Applicant)</div>
             </td>
           </tr>
