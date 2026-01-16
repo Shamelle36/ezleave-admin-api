@@ -1,6 +1,9 @@
 {
   "name": "backend",
   "version": "1.0.0",
+  "engines": {
+    "node": "18.20.4"
+  },
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
@@ -17,7 +20,7 @@
     "@sparticuz/chromium-min": "^143.0.4",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.2",
-    "cloudinary": "^1.37.2",
+    "cloudinary": "1.41.3",
     "cors": "^2.8.5",
     "docx": "^9.5.1",
     "dotenv": "^17.2.2",
