@@ -73,7 +73,7 @@ export const addEmployee = async (req, res) => {
     });
 
     // ✅ Declare eligibleStatuses - Include ALL statuses
-    const eligibleStatuses = ["Temporary", "Permanent", "Contractual", "Casual", "Coterminous", "Job Order"];
+    const eligibleStatuses = ["Temporary", "Permanent", "Contractual", "Casual", "Coterminous"];
 
     // INSERT employee
     const [employee] = await sql`
