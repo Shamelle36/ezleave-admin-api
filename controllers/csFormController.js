@@ -902,7 +902,7 @@ const mayorSignature = signature_method === "upload" && requesting_role === "may
                     alt="Applicant Signature"
                   />
                 ` : ''}
-                <div class="full-width-underline" style="margin-top: 25px;"></div>
+                <div class="full-width-underline"></div>
               </div>
               <div style="font-size: 13px" class="signature">(Signature of Applicant)</div>
             </td>
