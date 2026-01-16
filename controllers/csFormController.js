@@ -891,19 +891,19 @@ const mayorSignature = signature_method === "upload" && requesting_role === "may
               <span class="filled-data">${formattedInclusiveDates}</span>
             </td>
 
-            <td style="padding:6px; border-top: none;"> <!-- Reduced padding -->
+            <td style="padding:6px; border-top: none;">
               <div style="margin-bottom: 5px; font-size: 13px"><span class="checkbox">${commutationStatus === "Not Requested" ? "X" : ""}</span> Not Requested</div>
               <div style="font-size: 13px"><span class="checkbox">${commutationStatus === "Requested" ? "X" : ""}</span> Requested</div>
-              <div class="full-width-underline" style="margin-top: 15px;"></div>
-              ${signature_url ? `
-                <div style="text-align: center; margin-bottom: 5px;">
+              <div style="text-align: center; margin-top: 15px; position: relative;">
+                ${signature_url ? `
                   <img 
                     src="${signature_url}" 
-                    style="max-width: 180px; max-height: 60px; object-fit: contain;"
+                    style="max-width: 180px; max-height: 60px; object-fit: contain; position: relative; z-index: 2;"
                     alt="Applicant Signature"
                   />
-                </div>
-              ` : ''}
+                ` : ''}
+                <div class="full-width-underline" style="margin-top: 25px;"></div>
+              </div>
               <div style="font-size: 13px" class="signature">(Signature of Applicant)</div>
             </td>
           </tr>
