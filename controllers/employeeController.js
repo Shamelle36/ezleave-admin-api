@@ -395,14 +395,14 @@ export const getEmployeeSignature = async (req, res) => {
   try {
     const result = await sql`
       SELECT 
-        id,
+        user_id,
         first_name,
         last_name,
         signature_url,
         signature_uploaded_at,
         cloudinary_public_id
       FROM employee_list
-      WHERE id = ${id};
+      WHERE user_id = ${id};
     `;
 
     if (result.length === 0) {
