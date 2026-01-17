@@ -284,7 +284,7 @@ export async function getLeaveRequests(req, res) {
         const leaveCode = leaveTypeMap[lr.leave_type];
 
         // Attach the notification for this employee
-        const notification = filedNotifications.find(
+        const notification = filedNotifications.filter(
           (n) => n.user_id === lr.user_id
         );
 
