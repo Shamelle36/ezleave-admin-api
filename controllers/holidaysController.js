@@ -132,7 +132,7 @@ const sendDeleteHolidayNotifications = async (holidayToDelete) => {
         const employees = await sql`
             SELECT user_id, first_name, last_name 
             FROM employee_list 
-            WHERE status IN ('Active', 'active')
+            WHERE status = 'active'
         `;
         
         if (!employees || employees.length === 0) {
