@@ -13,7 +13,8 @@ import {
   deactivateAccount,
   restoreAccount,
   resetPassword,
-  processPasswordReset
+  processPasswordReset,
+  changePassword
 } from "../controllers/adminAuthController.js";
 
 const router = express.Router();
@@ -42,5 +43,8 @@ router.put('/accounts/:id/deactivate', deactivateAccount);
 router.put('/accounts/:id/restore', restoreAccount);
 router.post('/reset-password/:id', resetPassword);
 router.post('/process-reset/:token', processPasswordReset);
+
+// Add to adminAuthRoute.js
+router.put("/change-password/:id", changePassword);
 
 export default router;

@@ -1,6 +1,6 @@
 // backend/routes/authRoute.js
 import express from "express";
-import { signup, login, logout, getAdminById, updateAdminProfile, googleLogin } from "../controllers/authController.js";
+import { signup, login, logout, getAdminById, updateAdminProfile, googleLogin, changePassword } from "../controllers/authController.js";
 
 const router = express.Router();
 
@@ -10,5 +10,7 @@ router.post("/logout", logout);
 router.get("/useradmin/:id", getAdminById);
 router.put("/updateProfile/:id", updateAdminProfile);
 router.post('/google-login', googleLogin);
+// Add to authRoute.js
+router.put("/change-password/:id", changePassword);
 
 export default router;

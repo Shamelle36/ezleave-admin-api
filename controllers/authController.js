@@ -282,3 +282,52 @@ export const googleLogin = async (req, res) => {
     res.status(401).json({ message: "Google authentication failed" });
   }
 };
+
+// Add to authController.js
+export const changePassword = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { currentPassword, newPassword } = req.body;
+
+    // Find user
+    const result = await sql`
+      SELECT * FROM useradmin WHERE id = ${id}
+    `;
+
+    if (result.length === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const user = result[0];
+
+    // Verify current password
+    const isValid = await bcrypt.compare(currentPassword, user.password);
+    if (!isValid) {
+      return res.status(400).json({ message: "Current password is incorrect" });
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update password
+    await sql`
+      UPDATE useradmin
+      SET password = ${hashedPassword}
+      WHERE id = ${id}
+    `;
+
+    // Log activity
+    await logActivity(
+      user.id,
+      user.role,
+      "Password Changed",
+      "User changed their password",
+      req.ip
+    );
+
+    res.json({ message: "Password updated successfully" });
+  } catch (err) {
+    console.error("Error changing password:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
