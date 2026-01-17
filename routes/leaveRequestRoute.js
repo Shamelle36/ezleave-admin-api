@@ -9,6 +9,8 @@ import {
   getLeaveCalendarByMonth,
   checkOverlappingLeavesForOfficeHead,
   testOverlapCheck,
+  markNotificationAsRead,
+  markAllNotificationsAsRead
 } from "../controllers/leaveRequestController.js";
 
 const router = express.Router();
@@ -35,5 +37,9 @@ router.get('/leave-calendar/month/:year/:month', getLeaveCalendarByMonth);
 router.post('/check-overlapping-leaves', checkOverlappingLeavesForOfficeHead);
 
 router.get("/test-overlap", testOverlapCheck);
+
+// In your routes file (e.g., routes/leaveRoutes.js or server.js)
+router.put('/notifications/:id/read', markNotificationAsRead);
+router.put('/notifications/mark-all-read', markAllNotificationsAsRead);
 
 export default router;
