@@ -270,12 +270,11 @@ export async function getLeaveRequests(req, res) {
       ORDER BY lr.id DESC;
     `;
 
-    // 2️⃣ FETCH ONLY "Filed Leave" Notifications
-    const filedNotifications = await sql`
-      SELECT *
+      const filedNotifications = await sql`
+      SELECT id, user_id, message, created_at, read, type
       FROM notifications
-      WHERE message LIKE '%filed a % leave%'
-      ORDER BY created_at DESC;
+      WHERE message ILIKE '%filed%leave%'
+      ORDER BY created_at DESC
     `;
 
     // 3️⃣ ADD LEAVE BALANCES + MATCH NOTIFICATIONS
@@ -283,23 +282,19 @@ export async function getLeaveRequests(req, res) {
       leaveRequests.map(async (lr) => {
         const leaveCode = leaveTypeMap[lr.leave_type];
 
-        const notification = filedNotifications
-          .filter(n => n.user_id === lr.user_id)
-          .find(n => {
-            const notifTime = new Date(n.created_at).getTime();
-            const leaveTime = new Date(lr.date_filing).getTime();
-
-            // notification created AFTER leave was filed
-            return notifTime >= leaveTime;
-          });
-
-        const notificationObj = notification ? {
-          id: notification.id,  // Add this line to include the ID
-          type: notification.type || "leave_filed",
-          message: notification.message || `${lr.first_name} ${lr.last_name} filed a ${lr.leave_type} request`,
-          created_at: notification.created_at || new Date().toISOString(),
-          read: notification.read || false,
-        } : null;
+       const notifications = filedNotifications
+          .filter(n =>
+            n.user_id === lr.user_id &&
+            n.message.toLowerCase().includes("filed") &&
+            n.message.toLowerCase().includes("leave")
+          )
+          .map(n => ({
+            id: n.id,
+            type: n.type || "leave_filed",
+            message: n.message,
+            created_at: n.created_at,
+            read: n.read
+          }));
 
         if (!leaveCode) {
           return { 
@@ -307,7 +302,7 @@ export async function getLeaveRequests(req, res) {
             entitled: 0, 
             used: 0, 
             balance: 0, 
-            notification: notificationObj
+            notifications
           };
         }
 
@@ -322,7 +317,7 @@ export async function getLeaveRequests(req, res) {
             entitled: 0, 
             used: 0, 
             balance: 0, 
-            notification: notificationObj
+            notifications
           };
         }
 
@@ -339,7 +334,7 @@ export async function getLeaveRequests(req, res) {
             entitled: 0, 
             used: 0, 
             balance: 0, 
-            notification: notificationObj 
+            notifications
           };
         }
 
@@ -394,7 +389,7 @@ export async function getLeaveRequests(req, res) {
           entitled,
           used,
           balance,
-          notification: notificationObj
+          notifications
         };
       })
     );
