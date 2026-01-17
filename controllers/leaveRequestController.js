@@ -283,10 +283,15 @@ export async function getLeaveRequests(req, res) {
       leaveRequests.map(async (lr) => {
         const leaveCode = leaveTypeMap[lr.leave_type];
 
-        // Attach the notification for this employee
-        const notification = filedNotifications.find(
-          (n) => n.user_id === lr.user_id
-        );
+        const notification = filedNotifications
+          .filter(n => n.user_id === lr.user_id)
+          .find(n => {
+            const notifTime = new Date(n.created_at).getTime();
+            const leaveTime = new Date(lr.date_filing).getTime();
+
+            // notification created AFTER leave was filed
+            return notifTime >= leaveTime;
+          });
 
         const notificationObj = notification ? {
           id: notification.id,  // Add this line to include the ID
