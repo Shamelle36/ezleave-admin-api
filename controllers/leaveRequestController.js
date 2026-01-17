@@ -270,11 +270,12 @@ export async function getLeaveRequests(req, res) {
       ORDER BY lr.id DESC;
     `;
 
-      const filedNotifications = await sql`
-      SELECT id, user_id, message, created_at, read, type
+    // 2️⃣ FETCH ONLY "Filed Leave" Notifications
+    const filedNotifications = await sql`
+      SELECT *
       FROM notifications
-      WHERE message ILIKE '%filed%leave%'
-      ORDER BY created_at DESC
+      WHERE message LIKE '%filed a % leave%'
+      ORDER BY created_at DESC;
     `;
 
     // 3️⃣ ADD LEAVE BALANCES + MATCH NOTIFICATIONS
@@ -283,18 +284,27 @@ export async function getLeaveRequests(req, res) {
         const leaveCode = leaveTypeMap[lr.leave_type];
 
        const notifications = filedNotifications
-          .filter(n =>
-            n.user_id === lr.user_id &&
-            n.message.toLowerCase().includes("filed") &&
-            n.message.toLowerCase().includes("leave")
-          )
-          .map(n => ({
-            id: n.id,
-            type: n.type || "leave_filed",
-            message: n.message,
-            created_at: n.created_at,
-            read: n.read
-          }));
+        .filter(n =>
+          n.user_id === lr.user_id &&
+          n.message.toLowerCase().includes("filed") &&
+          n.message.toLowerCase().includes("leave")
+        )
+        .map(n => ({
+          id: n.id,
+          type: n.type || "leave_filed",
+          message: n.message,
+          created_at: n.created_at,
+          read: n.read
+        }));
+
+
+        const notificationObj = notifications ? {
+          id: notifications[0].id,  // Add this line to include the ID
+          type: notifications[0].type || "leave_filed",
+          message: notifications[0].message || `${lr.first_name} ${lr.last_name} filed a ${lr.leave_type} request`,
+          created_at: notifications[0].created_at || new Date().toISOString(),
+          read: notifications[0].read || false,
+        } : null;
 
         if (!leaveCode) {
           return { 
