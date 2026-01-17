@@ -1,3 +1,4 @@
+// holiday.js
 import sql from "../config/db.js";
 import { sendPushToUser } from "../utils/fcm.js";
 
@@ -15,21 +16,83 @@ export const getLocalHolidays = async (req, res) => {
     }
 };
 
-// Add new local holiday with notifications
+// Helper function to send holiday notifications to all employees
+const sendHolidayNotificationToAllEmployees = async (holiday, action = 'added') => {
+    try {
+        console.log(`📢 Sending holiday ${action} notification for: ${holiday.name} (${holiday.date})`);
+        
+        // Get all active employees
+        const employees = await sql`
+            SELECT user_id, first_name, last_name 
+            FROM employee_list 
+            WHERE status = 'Active'
+        `;
+        
+        if (!employees || employees.length === 0) {
+            console.log('No active employees found for notification');
+            return;
+        }
+        
+        const actionText = action === 'added' ? 'added' : 'updated';
+        const notificationTitle = `🎉 Holiday ${action === 'added' ? 'Added' : 'Updated'}`;
+        const notificationBody = `${holiday.name} has been ${actionText} to local holidays on ${holiday.date}`;
+        
+        let totalNotificationsSent = 0;
+        
+        // Send notifications to all employees
+        for (const employee of employees) {
+            try {
+                const pushResult = await sendPushToUser(
+                    employee.user_id,
+                    notificationTitle,
+                    notificationBody,
+                    {
+                        type: 'holiday_update',
+                        holiday_id: holiday.id,
+                        holiday_name: holiday.name,
+                        holiday_date: holiday.date,
+                        action: action,
+                        screen: 'holidays'
+                    }
+                );
+                
+                if (pushResult?.success) {
+                    totalNotificationsSent++;
+                }
+                
+                // Save notification to database
+                await sql`
+                    INSERT INTO notifications (user_id, message)
+                    VALUES (${employee.user_id}, ${`Holiday ${actionText.charAt(0).toUpperCase() + actionText.slice(1)}: ${holiday.name} on ${holiday.date}`})
+                `;
+                
+            } catch (empError) {
+                console.error(`Error sending notification to employee ${employee.user_id}:`, empError);
+                // Continue with other employees even if one fails
+            }
+        }
+        
+        console.log(`✅ Sent holiday ${action} notifications to ${totalNotificationsSent}/${employees.length} employees`);
+        return totalNotificationsSent;
+        
+    } catch (error) {
+        console.error('Error in sendHolidayNotificationToAllEmployees:', error);
+        throw error;
+    }
+};
+
+// Add new local holiday
 export const addLocalHoliday = async (req, res) => {
-    console.log("🟢 START: addLocalHoliday function called");
-    console.log("📦 Request body:", JSON.stringify(req.body, null, 2));
-    
+    let holiday;
     try {
         const { date, name, description, is_recurring } = req.body;
         
         // Validate required fields
         if (!date || !name) {
-            console.log("❌ Validation failed: Date and name are required");
             return res.status(400).json({ error: 'Date and name are required' });
         }
 
-        // Format date
+        // Format date if needed
         let formattedDate = date;
         if (typeof date === 'string') {
             const parsedDate = new Date(date);
@@ -37,121 +100,35 @@ export const addLocalHoliday = async (req, res) => {
                 formattedDate = parsedDate.toISOString().split('T')[0];
             }
         }
-        
-        console.log("📅 Formatted date:", formattedDate);
 
         // Sanitize description
         const sanitizedDescription = description?.trim() || null;
         
         // Insert holiday
-        console.log("💾 Inserting holiday into database...");
-        const [holiday] = await sql`
+        const [result] = await sql`
             INSERT INTO local_holidays 
             (date, name, description, is_recurring) 
             VALUES 
             (${formattedDate}, ${name}, ${sanitizedDescription}, ${is_recurring || false})
             RETURNING *
         `;
+
+        holiday = result;
         
-        console.log("✅ Holiday inserted with ID:", holiday.id);
+        // Send notification to all employees about the new holiday
+        // Don't await this so the API response is not delayed
+        sendHolidayNotificationToAllEmployees(holiday, 'added')
+            .catch(err => console.error('Error sending holiday notification:', err));
 
-        // Format date for display
-        const holidayDate = new Date(formattedDate);
-        const formattedDateDisplay = holidayDate.toLocaleDateString('en-US', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-        });
-        
-        console.log("📝 Formatted display date:", formattedDateDisplay);
-
-        // Send notifications to all active employees
-        console.log("🔔 Starting notification process...");
-        try {
-            // Get all active employees
-            console.log("👥 Fetching active employees...");
-            const allActiveEmployees = await sql`
-                SELECT user_id, fcm_token, email
-                FROM employee_list 
-                WHERE status = 'Active'
-            `;
-
-            console.log(`📊 Found ${allActiveEmployees.length} active employees`);
-            
-            if (allActiveEmployees.length === 0) {
-                console.log("⚠️ No active employees found. Skipping notifications.");
-            }
-
-            let notificationCount = 0;
-            let pushNotificationCount = 0;
-
-            // Process each employee
-            for (const employee of allActiveEmployees) {
-                try {
-                    // Create notification message
-                    const message = `New Holiday: ${name} on ${formattedDateDisplay}`;
-                    
-                    // Save notification to database
-                    const notificationResult = await sql`
-                        INSERT INTO notifications (user_id, message)
-                        VALUES (${employee.user_id}, ${message})
-                        RETURNING id
-                    `;
-                    
-                    if (notificationResult && notificationResult.length > 0) {
-                        notificationCount++;
-                        console.log(`✅ Notification saved for ${employee.email}`);
-                    }
-                    
-                    // Send push notification if employee has FCM token
-                    if (employee.fcm_token) {
-                        try {
-                            const pushResult = await sendPushToUser(
-                                employee.user_id,
-                                "📅 New Local Holiday Added",
-                                `${name} has been added as a local holiday on ${formattedDateDisplay}.`,
-                                {
-                                    type: 'new_holiday',
-                                    holiday_id: holiday.id,
-                                    holiday_name: name,
-                                    holiday_date: formattedDate,
-                                    screen: 'holidays'
-                                }
-                            );
-                            
-                            if (pushResult && pushResult.success) {
-                                pushNotificationCount++;
-                                console.log(`✅ Push sent to ${employee.email}`);
-                            }
-                        } catch (pushError) {
-                            console.error(`❌ Push error for ${employee.email}:`, pushError);
-                        }
-                    }
-                    
-                } catch (employeeError) {
-                    console.error(`❌ Error for employee ${employee.email}:`, employeeError);
-                }
-            }
-
-            console.log(`\n📊 NOTIFICATION SUMMARY:`);
-            console.log(`   Total employees: ${allActiveEmployees.length}`);
-            console.log(`   DB notifications: ${notificationCount}`);
-            console.log(`   Push notifications: ${pushNotificationCount}`);
-
-        } catch (notificationError) {
-            console.error("❌ Error in notification process:", notificationError);
-        }
-
-        console.log("\n✅ Holiday creation completed");
         res.status(201).json({
             message: 'Holiday added successfully',
-            holiday
+            holiday,
+            notification_sent: true
         });
-        
     } catch (error) {
-        console.error('❌ Error adding local holiday:', error);
+        console.error('Error adding local holiday:', error);
         
+        // Handle duplicate entry error
         if (error.code === '23505' || error.message.includes('duplicate')) {
             return res.status(400).json({ 
                 error: 'Holiday for this date already exists' 
@@ -162,8 +139,9 @@ export const addLocalHoliday = async (req, res) => {
     }
 };
 
-// Update local holiday with notifications
+// Update local holiday
 export const updateLocalHoliday = async (req, res) => {
+    let updatedHoliday;
     try {
         const { id } = req.params;
         const { date, name, description, is_recurring } = req.body;
@@ -185,9 +163,10 @@ export const updateLocalHoliday = async (req, res) => {
         // Sanitize description
         const sanitizedDescription = description?.trim() || null;
         
-        // Get old holiday data for comparison
+        // Get old holiday data first for comparison
         const [oldHoliday] = await sql`
-            SELECT name, date FROM local_holidays WHERE id = ${id}
+            SELECT * FROM local_holidays 
+            WHERE id = ${id}
         `;
 
         if (!oldHoliday) {
@@ -207,78 +186,33 @@ export const updateLocalHoliday = async (req, res) => {
             RETURNING *
         `;
 
-        // Send notifications if holiday was significantly changed
-        if (oldHoliday.name !== name || oldHoliday.date !== formattedDate) {
-            try {
-                const formattedDateDisplay = new Date(formattedDate).toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                });
+        if (!result) {
+            return res.status(404).json({ error: 'Holiday not found' });
+        }
 
-                const oldDateDisplay = new Date(oldHoliday.date).toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                });
-
-                // Get all active employees
-                const allActiveEmployees = await sql`
-                    SELECT user_id, fcm_token
-                    FROM employee_list 
-                    WHERE status = 'Active'
-                `;
-
-                console.log(`📊 Sending update notifications to ${allActiveEmployees.length} employees`);
-
-                // Save update notifications to database
-                for (const employee of allActiveEmployees) {
-                    try {
-                        const message = `Holiday Updated: ${oldHoliday.name} (${oldDateDisplay}) changed to ${name} (${formattedDateDisplay})`;
-                        
-                        await sql`
-                            INSERT INTO notifications (user_id, message)
-                            VALUES (${employee.user_id}, ${message})
-                        `;
-                        
-                        // Send push notification if employee has FCM token
-                        if (employee.fcm_token) {
-                            await sendPushToUser(
-                                employee.user_id,
-                                "📅 Holiday Updated",
-                                `${oldHoliday.name} has been updated to ${name} on ${formattedDateDisplay}`,
-                                {
-                                    type: 'holiday_updated',
-                                    holiday_id: id,
-                                    old_name: oldHoliday.name,
-                                    new_name: name,
-                                    holiday_date: formattedDate,
-                                    screen: 'holidays'
-                                }
-                            );
-                        }
-                    } catch (employeeError) {
-                        console.error(`Error processing employee ${employee.user_id}:`, employeeError);
-                    }
-                }
-                
-                console.log(`✅ Update notifications sent`);
-
-            } catch (notificationError) {
-                console.error("Error sending update notifications:", notificationError);
-            }
+        updatedHoliday = result;
+        
+        // Check if there were significant changes that warrant a notification
+        const significantChange = 
+            oldHoliday.name !== name || 
+            oldHoliday.date !== formattedDate;
+        
+        // Send notification to all employees about the updated holiday
+        if (significantChange) {
+            // Don't await this so the API response is not delayed
+            sendHolidayNotificationToAllEmployees(updatedHoliday, 'updated')
+                .catch(err => console.error('Error sending holiday update notification:', err));
         }
 
         res.json({ 
             message: 'Holiday updated successfully',
-            holiday: result
+            holiday: updatedHoliday,
+            notification_sent: significantChange
         });
-        
     } catch (error) {
         console.error('Error updating local holiday:', error);
         
+        // Handle duplicate entry error
         if (error.code === '23505' || error.message.includes('duplicate')) {
             return res.status(400).json({ 
                 error: 'Holiday for this date already exists' 
@@ -289,7 +223,7 @@ export const updateLocalHoliday = async (req, res) => {
     }
 };
 
-// Delete local holiday with notifications
+// Delete local holiday
 export const deleteLocalHoliday = async (req, res) => {
     try {
         const { id } = req.params;
@@ -298,68 +232,14 @@ export const deleteLocalHoliday = async (req, res) => {
             return res.status(400).json({ error: 'Holiday ID is required' });
         }
 
-        // First, get holiday details before deletion
-        const [holiday] = await sql`
-            SELECT name, date FROM local_holidays 
+        // First, get the holiday info before deleting for notification
+        const [holidayToDelete] = await sql`
+            SELECT * FROM local_holidays 
             WHERE id = ${id}
         `;
 
-        if (!holiday) {
+        if (!holidayToDelete) {
             return res.status(404).json({ error: 'Holiday not found' });
-        }
-
-        // Format date for display
-        const formattedDateDisplay = new Date(holiday.date).toLocaleDateString('en-US', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-        });
-
-        // Send notifications BEFORE deletion
-        try {
-            // Get all active employees
-            const allActiveEmployees = await sql`
-                SELECT user_id, fcm_token
-                FROM employee_list 
-                WHERE status = 'Active'
-            `;
-
-            console.log(`📊 Sending deletion notifications to ${allActiveEmployees.length} employees`);
-
-            // Save deletion notifications to database
-            for (const employee of allActiveEmployees) {
-                try {
-                    const message = `Holiday Removed: ${holiday.name} (${formattedDateDisplay}) has been removed`;
-                    
-                    await sql`
-                        INSERT INTO notifications (user_id, message)
-                        VALUES (${employee.user_id}, ${message})
-                    `;
-                    
-                    // Send push notification if employee has FCM token
-                    if (employee.fcm_token) {
-                        await sendPushToUser(
-                            employee.user_id,
-                            "📅 Holiday Removed",
-                            `${holiday.name} (${formattedDateDisplay}) has been removed as a local holiday.`,
-                            {
-                                type: 'holiday_deleted',
-                                holiday_name: holiday.name,
-                                holiday_date: holiday.date,
-                                screen: 'holidays'
-                            }
-                        );
-                    }
-                } catch (employeeError) {
-                    console.error(`Error processing employee ${employee.user_id}:`, employeeError);
-                }
-            }
-            
-            console.log(`✅ Deletion notifications sent`);
-
-        } catch (notificationError) {
-            console.error("Error sending deletion notifications:", notificationError);
         }
 
         // Delete holiday
@@ -368,11 +248,58 @@ export const deleteLocalHoliday = async (req, res) => {
             WHERE id = ${id}
         `;
 
+        // For postgres.js, the result object has a 'count' property
+        // that shows how many rows were affected
         if (result && result.count > 0) {
+            // Send notification about deleted holiday
+            try {
+                // Get all active employees
+                const employees = await sql`
+                    SELECT user_id FROM employee_list 
+                    WHERE status = 'Active'
+                `;
+                
+                if (employees && employees.length > 0) {
+                    const notificationTitle = "🗑️ Holiday Removed";
+                    const notificationBody = `${holidayToDelete.name} (${holidayToDelete.date}) has been removed from local holidays`;
+                    
+                    // Send notifications in the background
+                    for (const employee of employees) {
+                        try {
+                            await sendPushToUser(
+                                employee.user_id,
+                                notificationTitle,
+                                notificationBody,
+                                {
+                                    type: 'holiday_deleted',
+                                    holiday_name: holidayToDelete.name,
+                                    holiday_date: holidayToDelete.date,
+                                    action: 'deleted',
+                                    screen: 'holidays'
+                                }
+                            );
+                            
+                            // Save to database
+                            await sql`
+                                INSERT INTO notifications (user_id, message)
+                                VALUES (${employee.user_id}, ${`Holiday Removed: ${holidayToDelete.name} on ${holidayToDelete.date}`})
+                            `;
+                            
+                        } catch (empError) {
+                            console.error(`Error notifying employee ${employee.user_id}:`, empError);
+                        }
+                    }
+                }
+            } catch (notifError) {
+                console.error('Error sending delete notifications:', notifError);
+                // Don't fail the delete operation if notifications fail
+            }
+
             res.json({ 
                 message: 'Holiday deleted successfully',
                 deletedId: id,
-                holiday_name: holiday.name
+                holiday: holidayToDelete,
+                notification_sent: true
             });
         } else {
             return res.status(404).json({ error: 'Holiday not found or already deleted' });
