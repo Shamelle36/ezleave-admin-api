@@ -272,9 +272,9 @@ export async function getLeaveRequests(req, res) {
 
     // 2️⃣ FETCH ONLY "Filed Leave" Notifications
     const filedNotifications = await sql`
-      SELECT *
+      SELECT id, user_id, message, created_at, read, type
       FROM notifications
-      WHERE message LIKE '%filed a % leave%'
+      WHERE message ILIKE '%filed a%leave on%'
       ORDER BY created_at DESC;
     `;
 
