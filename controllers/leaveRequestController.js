@@ -293,7 +293,7 @@ export async function getLeaveRequests(req, res) {
           type: notification.type || "leave_filed",
           message: notification.message || `${lr.first_name} ${lr.last_name} filed a ${lr.leave_type} request`,
           created_at: notification.created_at || new Date().toISOString(),
-          is_read: notification.is_read || false,
+          read: notification.read || false,
         } : null;
 
         if (!leaveCode) {
@@ -1038,7 +1038,7 @@ export const markNotificationAsRead = async (req, res) => {
     
     const result = await sql`
       UPDATE notifications
-      SET is_read = true, read_at = NOW()
+      SET read = true
       WHERE id = ${notificationId}
       RETURNING *
     `;
@@ -1081,8 +1081,8 @@ export const markAllNotificationsAsRead = async (req, res) => {
   try {
     const result = await sql`
       UPDATE notifications
-      SET is_read = true, read_at = NOW()
-      WHERE user_id = ${userId} AND is_read = false
+      SET read = true
+      WHERE user_id = ${userId} AND read = false
       RETURNING COUNT(*) as updated_count
     `;
 
