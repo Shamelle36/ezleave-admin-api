@@ -389,7 +389,7 @@ export async function getLeaveRequests(req, res) {
           entitled,
           used,
           balance,
-          notification, // 👈 attached here
+          notification: notificationObj
         };
       })
     );
