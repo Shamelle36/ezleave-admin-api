@@ -18,6 +18,7 @@ import pushRoutes from "./routes/pushRoutes.js";
 import adminMessagesRoute from "./routes/adminMessagesRoute.js";
 import holidaysRoutes from './routes/holidaysRoute.js';
 import testRoute from './routes/testRoute.js';
+import notificationRoutes from './routes/notificationRoutes.js';
 
 import './cron.js';
 import path from "path";
@@ -57,6 +58,7 @@ app.use("/api/terms", termsRoutes);
 app.use("/api/push", pushRoutes);
 app.use("/api/admin/messages", adminMessagesRoute);
 app.use('/api/holidays', holidaysRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 app.use("/api", testRoute);
 
