@@ -25,7 +25,7 @@ const sendHolidayNotificationToAllEmployees = async (holiday, action = 'added') 
         const employees = await sql`
             SELECT user_id, first_name, last_name 
             FROM employee_list 
-            WHERE status = 'Active'
+            WHERE status = 'active'
         `;
         
         if (!employees || employees.length === 0) {
