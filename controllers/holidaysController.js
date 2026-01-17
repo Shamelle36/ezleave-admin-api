@@ -82,8 +82,8 @@ const sendHolidayNotificationToAllEmployees = async (holiday, action = 'added') 
                         
                         // Save notification to database
                         await sql`
-                            INSERT INTO notifications (user_id, message, type)
-                            VALUES (${employee.user_id}, ${`Holiday ${actionText}: ${holiday.name} on ${holiday.date}`}, 'holiday')
+                            INSERT INTO notifications (user_id, message)
+                            VALUES (${employee.user_id}, ${`Holiday ${actionText}: ${holiday.name} on ${holiday.date}`})
                         `;
                         
                         return pushResult?.success ? 1 : 0;
@@ -178,7 +178,7 @@ const sendDeleteHolidayNotifications = async (holidayToDelete) => {
                         
                         // Save notification to database
                         await sql`
-                            INSERT INTO notifications (user_id, message, type)
+                            INSERT INTO notifications (user_id, message)
                             VALUES (${employee.user_id}, ${`Holiday Removed: ${holidayToDelete.name} on ${holidayToDelete.date}`}, 'holiday')
                         `;
                         
