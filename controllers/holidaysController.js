@@ -1,6 +1,5 @@
 import sql from "../config/db.js";
 import { sendPushToUser } from "../utils/fcm.js";
-import { sendAndSaveNotification } from "../utils/notificationService.js";
 
 // Get all local holidays
 export const getLocalHolidays = async (req, res) => {
@@ -74,7 +73,7 @@ export const addLocalHoliday = async (req, res) => {
             day: 'numeric'
         });
 
-        // Send push notifications to all active employees
+        // Send push notifications and save to database
         try {
             // Get all active employees with FCM tokens
             const activeEmployees = await sql`
@@ -85,7 +84,7 @@ export const addLocalHoliday = async (req, res) => {
 
             console.log(`📢 Sending holiday notification to ${activeEmployees.length} employees`);
 
-            // Send push notification to each employee
+            // Send push notification to each employee with FCM token
             for (const employee of activeEmployees) {
                 try {
                     if (employee.fcm_token) {
@@ -104,29 +103,28 @@ export const addLocalHoliday = async (req, res) => {
                         );
                     }
                 } catch (employeeError) {
-                    console.error(`Error sending notification to ${employee.email}:`, employeeError);
+                    console.error(`Error sending push to ${employee.email}:`, employeeError);
                     // Continue with other employees
                 }
             }
 
-            // Also save notifications to database for all active employees
-            await sql`
-                INSERT INTO notifications (user_id, type, message, data)
-                SELECT 
-                    user_id,
-                    'new_holiday' as type,
-                    ${`New Holiday: ${name} on ${formattedDateDisplay}`} as message,
-                    ${JSON.stringify({
-                        holiday_id: holiday.id,
-                        holiday_name: name,
-                        holiday_date: formattedDate,
-                        added_by: adminName
-                    })} as data
+            // Save notifications to database for ALL active employees (even without FCM tokens)
+            const allActiveEmployees = await sql`
+                SELECT user_id 
                 FROM employee_list 
                 WHERE status = 'Active'
             `;
 
-            console.log(`✅ Notifications saved to database for all active employees`);
+            if (allActiveEmployees.length > 0) {
+                // Insert notifications for each active employee
+                for (const employee of allActiveEmployees) {
+                    await sql`
+                        INSERT INTO notifications (user_id, message)
+                        VALUES (${employee.user_id}, ${`New Holiday: ${name} on ${formattedDateDisplay}`})
+                    `;
+                }
+                console.log(`✅ Notifications saved to database for ${allActiveEmployees.length} active employees`);
+            }
 
         } catch (notificationError) {
             console.error("❌ Error in notification process:", notificationError);
@@ -152,7 +150,7 @@ export const addLocalHoliday = async (req, res) => {
     }
 };
 
-// Update local holiday with notifications (optional)
+// Update local holiday with notifications
 export const updateLocalHoliday = async (req, res) => {
     try {
         const { id } = req.params;
@@ -198,6 +196,10 @@ export const updateLocalHoliday = async (req, res) => {
             SELECT name, date FROM local_holidays WHERE id = ${id}
         `;
 
+        if (!oldHoliday) {
+            return res.status(404).json({ error: 'Holiday not found' });
+        }
+
         // Update holiday
         const [result] = await sql`
             UPDATE local_holidays 
@@ -212,12 +214,8 @@ export const updateLocalHoliday = async (req, res) => {
             RETURNING *
         `;
 
-        if (!result || result.length === 0) {
-            return res.status(404).json({ error: 'Holiday not found' });
-        }
-
         // Send notifications if holiday was significantly changed
-        if (oldHoliday && (oldHoliday.name !== name || oldHoliday.date !== formattedDate)) {
+        if (oldHoliday.name !== name || oldHoliday.date !== formattedDate) {
             try {
                 const formattedDateDisplay = new Date(formattedDate).toLocaleDateString('en-US', {
                     weekday: 'long',
@@ -226,25 +224,29 @@ export const updateLocalHoliday = async (req, res) => {
                     day: 'numeric'
                 });
 
-                // Save notification to database for all active employees
-                await sql`
-                    INSERT INTO notifications (user_id, type, message, data)
-                    SELECT 
-                        user_id,
-                        'holiday_updated' as type,
-                        ${`Holiday Updated: ${name} on ${formattedDateDisplay}`} as message,
-                        ${JSON.stringify({
-                            holiday_id: id,
-                            old_name: oldHoliday.name,
-                            new_name: name,
-                            holiday_date: formattedDate,
-                            updated_by: adminName
-                        })} as data
+                const oldDateDisplay = new Date(oldHoliday.date).toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                });
+
+                // Get all active employees
+                const allActiveEmployees = await sql`
+                    SELECT user_id 
                     FROM employee_list 
                     WHERE status = 'Active'
                 `;
 
+                // Save update notifications to database
+                for (const employee of allActiveEmployees) {
+                    await sql`
+                        INSERT INTO notifications (user_id, message)
+                        VALUES (${employee.user_id}, ${`Holiday Updated: ${oldHoliday.name} (${oldDateDisplay}) changed to ${name} (${formattedDateDisplay})`})
+                    `;
+                }
                 console.log(`✅ Update notifications saved to database`);
+
             } catch (notificationError) {
                 console.error("❌ Error sending update notifications:", notificationError);
             }
@@ -252,7 +254,7 @@ export const updateLocalHoliday = async (req, res) => {
 
         res.json({ 
             message: 'Holiday updated successfully',
-            holiday: result[0]
+            holiday: result
         });
     } catch (error) {
         console.error('Error updating local holiday:', error);
@@ -312,8 +314,7 @@ export const deleteLocalHoliday = async (req, res) => {
             WHERE id = ${id}
         `;
 
-        // For postgres.js, the result object has a 'count' property
-        // that shows how many rows were affected
+        // For postgres.js, check if deletion was successful
         if (result && result.count > 0) {
             // Send notifications about deleted holiday
             try {
@@ -324,23 +325,22 @@ export const deleteLocalHoliday = async (req, res) => {
                     day: 'numeric'
                 });
 
-                // Save notification to database for all active employees
-                await sql`
-                    INSERT INTO notifications (user_id, type, message, data)
-                    SELECT 
-                        user_id,
-                        'holiday_deleted' as type,
-                        ${`Holiday Removed: ${holiday.name} (${formattedDateDisplay}) has been removed`} as message,
-                        ${JSON.stringify({
-                            holiday_name: holiday.name,
-                            holiday_date: holiday.date,
-                            deleted_by: adminName
-                        })} as data
+                // Get all active employees
+                const allActiveEmployees = await sql`
+                    SELECT user_id 
                     FROM employee_list 
                     WHERE status = 'Active'
                 `;
 
+                // Save deletion notifications to database
+                for (const employee of allActiveEmployees) {
+                    await sql`
+                        INSERT INTO notifications (user_id, message)
+                        VALUES (${employee.user_id}, ${`Holiday Removed: ${holiday.name} (${formattedDateDisplay}) has been removed`})
+                    `;
+                }
                 console.log(`✅ Deletion notifications saved to database`);
+
             } catch (notificationError) {
                 console.error("❌ Error sending deletion notifications:", notificationError);
                 // Continue with successful deletion even if notifications fail
