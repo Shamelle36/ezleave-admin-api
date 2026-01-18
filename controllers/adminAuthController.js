@@ -75,19 +75,28 @@ export const createAccount = async (req, res) => {
   try {
     let { full_name, email, role, department } = req.body;
 
+    // Validate required fields
+    if (!full_name || !email || !role) {
+      return res.status(400).json({ 
+        message: "Missing required fields: full_name, email, role" 
+      });
+    }
+
     // Normalize role for DB
     role = role.toLowerCase().replace(" ", "_");
+
+    console.log(`🔵 Creating account for: ${email}, Role: ${role}, Department: ${department}`);
 
     // Check if email already exists
     const existing = await sql`
       SELECT * FROM admin_accounts WHERE email = ${email}
     `;
+    
     if (existing.length > 0) {
       const existingAccount = existing[0];
       if (existingAccount.status === "inactive") {
         return res.status(400).json({
-          message:
-            "This email belongs to an inactive account. Please restore it instead.",
+          message: "This email belongs to an inactive account. Please restore it instead.",
         });
       }
       return res.status(400).json({ message: "Email already exists." });
@@ -100,38 +109,83 @@ export const createAccount = async (req, res) => {
       RETURNING *
     `;
 
-    // --- Step 2: Create Firebase user with temporary password ---
-    const tempPassword = uuidv4().slice(0, 8); // random 8-char password
-    await admin.auth().createUser({
-      uid: `admin-${user.id}`,
-      email,
-      password: tempPassword,
-      displayName: full_name,
-    });
+    console.log(`✅ DB record created for user: ${user.id}`);
 
-    // --- Step 3: Generate Firebase password reset link ---
-    const resetLink = await admin.auth().generatePasswordResetLink(email, {
-      url: `https://ezleave-admin.vercel.app/setup-password`,
-    });
+    try {
+      // --- Step 2: Create Firebase user WITHOUT password initially ---
+      console.log(`Creating Firebase user for: ${email}`);
+      
+      const firebaseUser = await admin.auth().createUser({
+        uid: `admin-${user.id}`,
+        email,
+        emailVerified: false,
+        displayName: full_name,
+        disabled: false,
+      });
 
-    // --- Step 4: Send setup email ---
-    await transporter.sendMail({
-      from: `"EZLeave Admin" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: "Set up your EZLeave password",
-      html: `<p>Hello ${full_name},</p>
-             <p>An admin has created an account for you. Please set your password by clicking the link below:</p>
-             <a href="${resetLink}">${resetLink}</a>
-             <p>This link will allow you to set your password and log in.</p>`,
-    });
+      console.log(`✅ Firebase user created: ${firebaseUser.uid}`);
 
-    res.status(201).json({
-      message:
-        "✅ Account created successfully! User will receive an email to set their password.",
-    });
+      // --- Step 3: Generate Firebase password reset link (Firebase will send the email) ---
+      console.log(`Generating password reset link for: ${email}`);
+      
+      // This will automatically send a password reset email using Firebase's email service
+      const resetLink = await admin.auth().generatePasswordResetLink(email, {
+        // URL where user will be redirected after clicking the email link
+        url: `https://ezleave-admin.vercel.app/setup-password`,
+        handleCodeInApp: false, // Set to true if using Firebase Dynamic Links
+        // Configure the email template
+        dynamicLinkDomain: "ezleave.page.link", // Optional: if using Firebase Dynamic Links
+      });
+
+      console.log(`✅ Firebase password reset email sent to: ${email}`);
+      console.log(`Reset link: ${resetLink}`);
+
+      // You can also customize the email template if needed
+      // await admin.auth().updateProjectConfig({
+      //   emailTemplate: {
+      //     resetPasswordUrl: resetLink,
+      //     // Customize email content
+      //     subject: "Set up your EZLeave Admin password",
+      //     body: `Hello ${full_name},<br><br>An admin has created an account for you.<br><br>Click the link below to set your password:`
+      //   }
+      // });
+
+      res.status(201).json({
+        message: "✅ Account created successfully!",
+        details: "Firebase has sent a password setup email to the user.",
+        userId: user.id,
+        email: user.email,
+        firebaseUid: firebaseUser.uid,
+        note: "The user will receive an email from Firebase to set their password."
+      });
+
+    } catch (firebaseError) {
+      console.error("❌ Firebase operation failed:", firebaseError);
+      
+      // Rollback DB insertion if Firebase fails
+      await sql`DELETE FROM admin_accounts WHERE id = ${user.id}`;
+      
+      // Check specific Firebase error codes
+      if (firebaseError.code === 'auth/email-already-exists') {
+        return res.status(400).json({
+          message: "Email already exists in Firebase Authentication",
+          error: "This email is already registered in the authentication system"
+        });
+      }
+      
+      res.status(500).json({ 
+        message: "Failed to create authentication account",
+        error: firebaseError.message || "Firebase authentication error",
+        code: firebaseError.code
+      });
+    }
+
   } catch (err) {
-    console.error("❌ Error creating account with Firebase:", err);
-    res.status(500).json({ message: "Internal server error" });
+    console.error("❌ Error creating account:", err);
+    res.status(500).json({ 
+      message: "Internal server error",
+      error: err.message 
+    });
   }
 };
 
