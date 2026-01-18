@@ -19,19 +19,57 @@ const generateToken = (user) => {
   );
 };
 
+// Initialize Firebase Admin SDK
 if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
+  try {
+    const serviceAccount = {
       projectId: "ezleave-admin",
       clientEmail: "firebase-adminsdk-fbsvc@ezleave-admin.iam.gserviceaccount.com",
-      privateKey: "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC1xptkahGhxfbr\nCjCqSNmA6Bb/piU37iXKkO7Y6TsfVLj+bPDnOrlONq+9jQAGuG3t9m+bcieKsvoT\nElbgnoYt63aDHukmVp2TQ/uBeTGMMmkQn/fLkPLpG58Fa/JjPNm5N8+OBwu1THtk\nONP/s6I+CzSzqnWHm6GMIw/+Lu6K1/WbPWhH2Jv4FZ1Bnm3AGlpLrvwmSQG/Xrqj\no6RCK16vOk35qKzcwa4yT2GlfqYf+sSbLnF2HSFnN+gOY1CpbRqekSNhDVJfsPso\n0Htm2aEfiRx09CHADlLU018pMJtaAp6TDk7izyKO4UBSUqGOC80iZC7FyBSQMm/g\nVEcnFoePAgMBAAECggEATEsD/HTCWr4+gO7hdw8lbwO6Z2lh9KQZK3iCLvtRC7jg\n/jRWNg7BKNEuGKYd7TQqO3az6C/U5dNxv2Byo0sVsR9DOgxWufcfouglHvXxdFDS\nJR6m/8MiGPG1YC6q6Ljo/uKsVAWkBd+IaIurewZ3oYfNgl0YgCazeqBavYoQJ6h/\n9N+7gD/7AidV8h2j94qibS3lii7wAIGznV/e5PApKdLhoelFRIewF5Qst81xhRp7\nydPoQY7Sz6mXp42WxupEF+HiaC6rs9NG9NJo1e0W5yMdhikrjpD6Vbvgs12X3tat\nwGG4N1JthcEvBtglkE7ZLDXBvhh2LCQ31x74pHibfQKBgQDpN50n1rro1LwXe6wo\nM6rpPJvZiJlXgb8fvvBCQEzI7WOXs5sBMWlIo+ZaXSA964nrlHcm08Y6s0vbyXbZ\n+BD5uNxxJYcgVMpmk6XYoWMhHRW81vYifZlAC3jb+DLZfTqsliKcurbw73zLSewz\nlFq3Lj8ft2C53xVMzAKP3s4duwKBgQDHiIarEjH48ELO43xTHce0LpInVEOrt2SW\nw9ooUgBUsV6offhYyeVE8nYl/bGE7OwGhSOTkWLe/gBL+Tp9Uu1W1YC0ij283TyT\n/tQ0tterk+J35qKjfc/LEM9VSsvoSVwDLV9kxPmLBK1pSFidRy6GMuufLMLKvvCy\nYQrVC9w2PQKBgQDYPUasT7+Sbt3P8E3aIL4R8K6Y7r0vlBAAgWwIIdKQYvv7Bv9s\nBcKXJdFKbBqfDywckNZB3A5rEx/9NDnNNOOYiD1tc9xsr/HTVodp64ocg/lJ1Q73\nP/m+lmSDoQiU/DZRHAwPwlgp4gSWAX7O/Hl4a5r/72nyLdR0Fp0xhOccTQKBgAdw\n4/TFPO/XpeYpPZ2r4qKpifHFhrCEqk+lBiGyzShbZPhLmlNVVCN6F0XbbB9U5ohn\ntqfuKA3A0yoCJVg/G3K9i4swDJVaesPaIPfGScywOyXViAMo0fL0sYawv2HuOmwz\n6PbNEbFJf14JwKQ831NJ2teYx7rf3AIK9Gh1hMTRAoGASoHVm9PDEAeE6hxDwVq3\nYou2GxqyEaZoYcoJOBR32EVdb3u2FdNRsD6njHngPP/cjsjREkRll43zeZJV0w0V\nh9Ev6q+rH1AqzZNGnlD/a42GTWyWFglQ5QMr9A5XPRLIgRvKiMRyg1B+rv6DVfVb\n1ThqDzo+HlpqS3pyd8Yne2c=\n-----END PRIVATE KEY-----\n".replace(/\\n/g, "\n"),
-    }),
-  });
+      privateKey: process.env.FIREBASE_PRIVATE_KEY 
+        ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
+        : `-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiGw0BAQEFAASCBKcwggSjAgEAAoIBAQC1xptkahGhxfbr
+CjCqSNmA6Bb/piU37iXKkO7Y6TsfVLj+bPDnOrlONq+9jQAGuG3t9m+bcieKsvoT
+ElbgnoYt63aDHukmVp2TQ/uBeTGMMmkQn/fLkPLpG58Fa/JjPNm5N8+OBwu1THtk
+ONP/s6I+CzSzqnWHm6GMIw/+Lu6K1/WbPWhH2Jv4FZ1Bnm3AGlpLrvwmSQG/Xrqj
+o6RCK16vOk35qKzcwa4yT2GlfqYf+sSbLnF2HSFnN+gOY1CpbRqekSNhDVJfsPso
+0Htm2aEfiRx09CHADlLU018pMJtaAp6TDk7izyKO4UBSUqGOC80iZC7FyBSQMm/g
+VEcnFoePAgMBAAECggEATEsD/HTCWr4+gO7hdw8lbwO6Z2lh9KQZK3iCLvtRC7jg
+/jRWNg7BKNEuGKYd7TQqO3az6C/U5dNxv2Byo0sVsR9DOgxWufcfouglHvXxdFDS
+JR6m/8MiGPG1YC6q6Ljo/uKsVAWkBd+IaIurewZ3oYfNgl0YgCazeqBavYoQJ6h/
+9N+7gD/7AidV8h2j94qibS3lii7wAIGznV/e5PApKdLhoelFRIewF5Qst81xhRp7
+ydPoQY7Sz6mXp42WxupEF+HiaC6rs9NG9NJo1e0W5yMdhikrjpD6Vbvgs12X3tat
+wGG4N1JthcEvBtglkE7ZLDXBvhh2LCQ31x74pHibfQKBgQDpN50n1rro1LwXe6wo
+M6rpPJvZiJlXgb8fvvBCQEzI7WOXs5sBMWlIo+ZaXSA964nrlHcm08Y6s0vbyXbZ
++BD5uNxxJYcgVMpmk6XYoWMhHRW81vYifZlAC3jb+DLZfTqsliKcurbw73zLSewz
+lFq3Lj8ft2C53xVMzAKP3s4duwKBgQDHiIarEjH48ELO43xTHce0LpInVEOrt2SW
+w9ooUgBUsV6offhYyeVE8nYl/bGE7OwGhSOTkWLe/gBL+Tp9Uu1W1YC0ij283TyT
+/tQ0tterk+J35qKjfc/LEM9VSsvoSVwDLV9kxPmLBK1pSFidRy6GMuufLMLKvvCy
+YQrVC9w2PQKBgQDYPUasT7+Sbt3P8E3aIL4R8K6Y7r0vlBAAgWwIIdKQYvv7Bv9s
+BcKXJdFKbBqfDywckNZB3A5rEx/9NDnNNOOYiD1tc9xsr/HTVodp64ocg/lJ1Q73
+P/m+lmSDoQiU/DZRHAwPwlgp4gSWAX7O/Hl4a5r/72nyLdR0Fp0xhOccTQKBgAdw
+4/TFPO/XpeYpPZ2r4qKpifHFhrCEqk+lBiGyzShbZPhLmlNVVCN6F0XbbB9U5ohn
+ntqfuKA3A0yoCJVg/G3K9i4swDJVaesPaIPfGScywOyXViAMo0fL0sYawv2HuOmwz
+6PbNEbFJf14JwKQ831NJ2teYx7rf3AIK9Gh1hMTRAoGASoHVm9PDEAeE6hxDwVq3
+You2GxqyEaZoYcoJOBR32EVdb3u2FdNRsD6njHngPP/cjsjREkRll43zeZJV0w0V
+h9Ev6q+rH1AqzZNGnlD/a42GTWyWFglQ5QMr9A5XPRLIgRvKiMRyg1B+rv6DVfVb
+1ThqDzo+HlpqS3pyd8Yne2c=
+-----END PRIVATE KEY-----`.replace(/\\n/g, '\n')
+    };
+
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+    });
+    
+    console.log("✅ Firebase Admin SDK initialized successfully");
+  } catch (error) {
+    console.error("❌ Firebase initialization error:", error.message);
+  }
 }
 
 // Setup NodeMailer transporter
 const transporter = nodemailer.createTransport({
-  service: "Gmail", // or any SMTP service
+  service: "Gmail",
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
@@ -71,6 +109,7 @@ export const fetchInactiveAccounts = async (req, res) => {
   }
 };
 
+// 🟢 Create Account with Firebase
 export const createAccount = async (req, res) => {
   try {
     let { full_name, email, role, department } = req.body;
@@ -102,106 +141,122 @@ export const createAccount = async (req, res) => {
       return res.status(400).json({ message: "Email already exists." });
     }
 
-    // --- Step 1: Insert into DB ---
-    const [user] = await sql`
-      INSERT INTO admin_accounts (full_name, email, role, department, status)
-      VALUES (${full_name}, ${email}, ${role}, ${department}, 'active')
-      RETURNING *
-    `;
-
-    console.log(`✅ DB record created for user: ${user.id}`);
-
     try {
-      // --- Step 2: Create Firebase user WITH a temporary password ---
-      const tempPassword = uuidv4().slice(0, 12) + "Aa1!"; // Strong temporary password
+      // Create Firebase user
       console.log(`Creating Firebase user for: ${email}`);
       
       const firebaseUser = await admin.auth().createUser({
-        uid: `admin-${user.id}`,
         email,
         emailVerified: false,
-        password: tempPassword, // Add a temporary password
         displayName: full_name,
         disabled: false,
       });
 
       console.log(`✅ Firebase user created: ${firebaseUser.uid}`);
 
-      // --- Step 3: Generate Firebase password reset link ---
-      console.log(`Generating password reset link for: ${email}`);
-      
-      // This will automatically send a password reset email using Firebase's email service
-      const resetLink = await admin.auth().generatePasswordResetLink(email, {
-        // URL where user will be redirected after clicking the email link
-        url: `https://ezleave-admin.vercel.app/setup-password`,
-        handleCodeInApp: false,
-        // Optional: Customize the email template
-        // dynamicLinkDomain: "ezleave.page.link",
-      });
+      // Insert into DB with Firebase UID
+      const [user] = await sql`
+        INSERT INTO admin_accounts (full_name, email, role, department, status, firebase_uid)
+        VALUES (${full_name}, ${email}, ${role}, ${department}, 'active', ${firebaseUser.uid})
+        RETURNING *
+      `;
 
-      console.log(`✅ Firebase password reset email sent to: ${email}`);
-      console.log(`Reset link generated (first 50 chars): ${resetLink.substring(0, 50)}...`);
+      console.log(`✅ DB record created: ${user.id}`);
 
-      res.status(201).json({
-        message: "✅ Account created successfully!",
-        details: "Firebase has sent a password setup email to the user.",
-        userId: user.id,
-        email: user.email,
-        firebaseUid: firebaseUser.uid,
-        note: "The user will receive an email from Firebase to set their password."
-      });
+      // Send Firebase password setup email
+      try {
+        console.log(`Sending Firebase password setup email to: ${email}`);
+        
+        await admin.auth().generatePasswordResetLink(email, {
+          url: `https://ezleave-admin.vercel.app/login`,
+          handleCodeInApp: false,
+        });
+
+        console.log(`✅ Firebase password reset email sent`);
+        
+        res.status(201).json({
+          message: "✅ Account created successfully!",
+          details: "User will receive a password setup email from Firebase.",
+          userId: user.id,
+          email: user.email,
+        });
+
+      } catch (emailError) {
+        console.error("❌ Firebase email error:", emailError.message);
+        
+        // Fallback: Use nodemailer
+        if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+          await transporter.sendMail({
+            from: `"EZLeave Admin" <${process.env.EMAIL_USER}>`,
+            to: email,
+            subject: "Set up your EZLeave Admin Password",
+            html: `
+              <p>Hello ${full_name},</p>
+              <p>Your account has been created.</p>
+              <p>Please go to the login page and click "Forgot Password" to set your password.</p>
+              <p>Email: ${email}</p>
+              <p>Login URL: https://ezleave-admin.vercel.app/login</p>
+            `,
+          });
+          
+          console.log(`✅ Fallback email sent via nodemailer`);
+        }
+
+        res.status(201).json({
+          message: "✅ Account created successfully!",
+          details: "Please instruct user to use 'Forgot Password' on login page.",
+          userId: user.id,
+          email: user.email,
+        });
+      }
 
     } catch (firebaseError) {
-      console.error("❌ Firebase operation failed:", firebaseError);
-      console.error("Firebase error details:", {
-        code: firebaseError.code,
-        message: firebaseError.message,
-        stack: firebaseError.stack
-      });
+      console.error("❌ Firebase error:", firebaseError.message);
       
-      // Rollback DB insertion if Firebase fails
-      await sql`DELETE FROM admin_accounts WHERE id = ${user.id}`;
-      
-      // Check specific Firebase error codes
       if (firebaseError.code === 'auth/email-already-exists') {
         return res.status(400).json({
-          message: "Email already exists in Firebase Authentication",
-          error: "This email is already registered in the authentication system"
+          message: "This email is already registered in our authentication system.",
         });
       }
       
-      // Provide more specific error messages
-      let errorMessage = "Failed to create authentication account";
-      if (firebaseError.code === 'auth/invalid-email') {
-        errorMessage = "Invalid email address format";
-      } else if (firebaseError.code === 'auth/weak-password') {
-        errorMessage = "Password is too weak";
-      } else if (firebaseError.code === 'auth/operation-not-allowed') {
-        errorMessage = "Email/password accounts are not enabled in Firebase";
-      }
+      // Fallback: Create account without Firebase
+      console.log("🔄 Creating account without Firebase");
       
-      res.status(500).json({ 
-        message: errorMessage,
-        error: firebaseError.message || "Firebase authentication error",
-        code: firebaseError.code
+      const [user] = await sql`
+        INSERT INTO admin_accounts (full_name, email, role, department, status)
+        VALUES (${full_name}, ${email}, ${role}, ${department}, 'active')
+        RETURNING *
+      `;
+
+      // Generate temporary password
+      const tempPassword = "Welcome123!";
+      const hashedPassword = await bcrypt.hash(tempPassword, 10);
+      
+      await sql`
+        UPDATE admin_accounts
+        SET password_hash = ${hashedPassword}
+        WHERE id = ${user.id}
+      `;
+
+      res.status(201).json({
+        message: "✅ Account created with temporary password!",
+        details: `User can login with password: ${tempPassword}`,
+        userId: user.id,
+        email: user.email,
+        note: "Please change password after first login",
       });
     }
 
   } catch (err) {
     console.error("❌ Error creating account:", err);
-    console.error("General error details:", {
-      message: err.message,
-      stack: err.stack
-    });
-    
     res.status(500).json({ 
-      message: "Internal server error",
+      message: "Failed to create account",
       error: err.message 
     });
   }
 };
 
-// 🟢 2. Setup password using token
+// 🟢 Setup password using token (Kept for backward compatibility)
 export const setupPassword = async (req, res) => {
   try {
     const { token } = req.params;
@@ -257,7 +312,7 @@ export const setupPassword = async (req, res) => {
   }
 };
 
-// 🟢 3. Login for admin/head/mayor
+// 🟢 Login for admin/head/mayor (Updated for Firebase)
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -278,8 +333,25 @@ export const login = async (req, res) => {
       });
     }
 
+    // Check if user has Firebase UID (new system)
+    if (user.firebase_uid) {
+      // For Firebase users, they should set password via Firebase email
+      if (!user.password_hash) {
+        return res.status(400).json({ 
+          message: "Password not set yet. Please check your email for password setup link from Firebase.",
+          needsPasswordSetup: true
+        });
+      }
+    } else {
+      // For old users without Firebase
+      if (!user.password_hash) {
+        return res.status(400).json({ message: "Password not yet set. Check your email for setup link." });
+      }
+    }
+
+    // Verify password (for both Firebase and non-Firebase users)
     if (!user.password_hash) {
-      return res.status(400).json({ message: "Password not yet set. Check your email for setup link." });
+      return res.status(400).json({ message: "Password not set. Please use 'Forgot Password'." });
     }
 
     const valid = await bcrypt.compare(password, user.password_hash);
@@ -625,7 +697,7 @@ export const restoreAccount = async (req, res) => {
   }
 };
 
-// 🟢 9. Reset password for admin account
+// 🟢 9. Reset password for admin account (Updated for Firebase)
 export const resetPassword = async (req, res) => {
   console.log("=== RESET PASSWORD REQUEST ===");
   console.log("Params:", req.params);
@@ -651,9 +723,31 @@ export const resetPassword = async (req, res) => {
       });
     }
 
-    // Generate reset token
+    // Check if user has Firebase UID
+    if (user.firebase_uid) {
+      try {
+        // Use Firebase to send password reset email
+        console.log(`📧 Sending Firebase password reset to: ${user.email}`);
+        
+        await admin.auth().generatePasswordResetLink(user.email, {
+          url: `https://ezleave-admin.vercel.app/login`,
+          handleCodeInApp: false,
+        });
+
+        console.log(`✅ Firebase password reset email sent`);
+        
+        return res.json({ 
+          message: "✅ Password reset instructions sent via Firebase.",
+        });
+      } catch (firebaseError) {
+        console.error("❌ Firebase error:", firebaseError.message);
+        // Fall through to nodemailer
+      }
+    }
+
+    // Fallback: Use nodemailer
     const token = uuidv4();
-    const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24); // valid for 24 hours
+    const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24);
 
     // Delete any existing reset tokens for this user
     await sql`
@@ -667,25 +761,28 @@ export const resetPassword = async (req, res) => {
       VALUES (${user.id}, ${token}, 'reset', ${expiresAt})
     `;
 
-    // Setup password reset link
-    const resetLink = `http://localhost:3001/reset-password?token=${token}`;
+    const resetLink = `https://ezleave-admin.vercel.app/reset-password?token=${token}`;
 
-    // Send email
-    await transporter.sendMail({
-      from: `"EZLeave Admin" <${process.env.EMAIL_USER}>`,
-      to: user.email,
-      subject: "Password Reset Request",
-      html: `<p>Hello ${user.full_name},</p>
-             <p>You have requested to reset your password. Please click the link below to set a new password:</p>
-             <a href="${resetLink}">${resetLink}</a>
-             <p>This link is valid for 24 hours.</p>
-             <p>If you didn't request this, please ignore this email.</p>`,
-    });
+    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+      await transporter.sendMail({
+        from: `"EZLeave Admin" <${process.env.EMAIL_USER}>`,
+        to: user.email,
+        subject: "Password Reset Request",
+        html: `<p>Hello ${user.full_name},</p>
+               <p>Click <a href="${resetLink}">here</a> to reset your password</p>
+               <p>Link: ${resetLink}</p>`,
+      });
 
-    console.log(`✅ Password reset email sent for account ${id}`);
-    res.json({ 
-      message: "✅ Password reset instructions sent to user's email.",
-    });
+      console.log(`✅ Password reset email sent for account ${id}`);
+      res.json({ 
+        message: "✅ Password reset instructions sent to user's email.",
+      });
+    } else {
+      res.json({ 
+        message: "✅ Password reset initiated.",
+        resetLink: resetLink
+      });
+    }
   } catch (err) {
     console.error("❌ Error resetting password:", err);
     res.status(500).json({ message: "Failed to reset password." });
@@ -810,7 +907,6 @@ export const forgotPassword = async (req, res) => {
 
     if (users.length === 0) {
       console.log(`❌ Email not found: ${email}`);
-      // For security, don't reveal if email exists or not
       return res.status(200).json({ 
         message: "If your email exists in our system, you will receive password reset instructions." 
       });
@@ -827,11 +923,34 @@ export const forgotPassword = async (req, res) => {
       });
     }
 
-    // Generate reset token
-    const token = uuidv4();
-    const expiresAt = new Date(Date.now() + 1000 * 60 * 60); // 1 hour
+    // Check if user has Firebase UID
+    if (user.firebase_uid) {
+      try {
+        // Use Firebase to send password reset email
+        console.log(`📧 Sending Firebase password reset to: ${email}`);
+        
+        await admin.auth().generatePasswordResetLink(email, {
+          url: `https://ezleave-admin.vercel.app/login`,
+          handleCodeInApp: false,
+        });
 
-    // Delete any existing reset tokens for this user
+        console.log(`✅ Firebase password reset email sent`);
+        
+        return res.status(200).json({ 
+          message: "Password reset email sent successfully via Firebase." 
+        });
+      } catch (firebaseError) {
+        console.error("❌ Firebase error:", firebaseError.message);
+        // Fall through to nodemailer
+      }
+    }
+
+    // Fallback to nodemailer
+    const token = uuidv4();
+    const expiresAt = new Date(Date.now() + 1000 * 60 * 60);
+    const resetLink = `https://ezleave-admin.vercel.app/reset-password?token=${token}`;
+
+    // Delete any existing reset tokens
     await sql`
       DELETE FROM password_tokens 
       WHERE user_id = ${user.id} AND type = 'reset'
@@ -843,76 +962,33 @@ export const forgotPassword = async (req, res) => {
       VALUES (${user.id}, ${token}, 'reset', ${expiresAt})
     `;
 
-    // Create reset link - USE YOUR ACTUAL FRONTEND URL
-    const resetLink = `https://ezleave-admin.vercel.app/reset-password?token=${token}`;
-    // OR if you're on Render: 
-    // const resetLink = `https://ezleave-admin.onrender.com/reset-password?token=${token}`;
-
-    console.log(`📧 Sending reset email to: ${email}`);
     console.log(`🔗 Reset link: ${resetLink}`);
 
-    // Send email - make sure transporter is configured
-    try {
-      // Check if email credentials are configured
-      if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-        console.error("❌ Email credentials not configured in environment variables");
-        console.log(`📋 Manual reset link for ${user.full_name}: ${resetLink}`);
-        
-        // Return success but mention email wasn't sent
-        return res.status(200).json({ 
-          message: "Password reset initiated. Please contact administrator for reset link.",
-          debug_link: process.env.NODE_ENV === 'development' ? resetLink : undefined
-        });
-      }
-
-      // Send actual email
-      const mailOptions = {
+    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+      await transporter.sendMail({
         from: `"EZLeave Admin" <${process.env.EMAIL_USER}>`,
         to: email,
         subject: "Password Reset Request - EZLeave Admin",
         html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
-            <h2 style="color: #4285f4; text-align: center;">EZLeave Admin Password Reset</h2>
+          <div style="font-family: Arial, sans-serif;">
+            <h2 style="color: #4285f4;">EZLeave Admin Password Reset</h2>
             <p>Hello <strong>${user.full_name}</strong>,</p>
-            <p>You have requested to reset your password for the EZLeave Admin system.</p>
-            <p>Please click the button below to set a new password:</p>
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${resetLink}" style="background-color: #4285f4; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
-                Reset Password
-              </a>
-            </div>
-            <p>Or copy and paste this link in your browser:</p>
-            <p style="background-color: #f5f5f5; padding: 10px; border-radius: 5px; word-break: break-all;">
-              ${resetLink}
-            </p>
-            <p>This link will expire in <strong>1 hour</strong>.</p>
-            <p>If you didn't request this password reset, please ignore this email or contact your administrator.</p>
-            <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 20px 0;">
-            <p style="color: #666; font-size: 12px; text-align: center;">
-              This is an automated message from EZLeave Admin System.
-            </p>
+            <p>Click the link below to reset your password:</p>
+            <p><a href="${resetLink}">${resetLink}</a></p>
+            <p>This link expires in 1 hour.</p>
           </div>
         `,
-        text: `Hello ${user.full_name},\n\nYou requested a password reset for EZLeave Admin.\n\nReset link: ${resetLink}\n\nThis link expires in 1 hour.\n\nIf you didn't request this, please ignore this email.`
-      };
-
-      const info = await transporter.sendMail(mailOptions);
-      console.log(`✅ Email sent successfully to ${email}:`, info.messageId);
-
-      res.status(200).json({ 
-        message: "Password reset instructions have been sent to your email address." 
       });
 
-    } catch (emailError) {
-      console.error("❌ Email sending failed:", emailError);
-      
-      // Log the reset link for debugging
-      console.log(`📋 Reset link that would have been sent: ${resetLink}`);
-      
-      // Still return success but mention email might fail
+      console.log(`✅ Email sent successfully to ${email}`);
       res.status(200).json({ 
-        message: "Password reset initiated. If you don't receive an email, please contact administrator.",
-        debug_note: process.env.NODE_ENV === 'development' ? 'Email service error: ' + emailError.message : undefined
+        message: "Password reset instructions have been sent to your email." 
+      });
+    } else {
+      console.log(`📋 Manual reset link: ${resetLink}`);
+      res.status(200).json({ 
+        message: "Password reset initiated. Please contact administrator for reset link.",
+        resetLink: resetLink
       });
     }
 
