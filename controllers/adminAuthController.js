@@ -51,21 +51,18 @@ export const fetchInactiveAccounts = async (req, res) => {
 };
 
 // 🟢 Create Account (plain password)
+// 🟢 Create Account (store Firebase password in DB)
 export const createAccount = async (req, res) => {
   try {
-    let { full_name, email, role, department, password: tempPassword } = req.body;
+    let { full_name, email, role, department, password } = req.body;
 
-    // Validate required fields
-    if (!full_name || !email || !role || !tempPassword) {
+    if (!full_name || !email || !role || !password) {
       return res.status(400).json({ 
         message: "Missing required fields: full_name, email, role, or password" 
       });
     }
 
-    // Normalize role for DB
     role = role.toLowerCase().replace(" ", "_");
-
-    console.log(`🔵 Creating account for: ${email}, Role: ${role}, Department: ${department}`);
 
     // Check if email already exists
     const existing = await sql`
@@ -82,32 +79,25 @@ export const createAccount = async (req, res) => {
       return res.status(400).json({ message: "Email already exists." });
     }
 
-    // Insert into DB with plain password (no hash)
+    // INSERT into DB with plain password (same as Firebase password)
     const [user] = await sql`
       INSERT INTO admin_accounts (full_name, email, role, department, status, password_hash)
-      VALUES (${full_name}, ${email}, ${role}, ${department}, 'active', ${tempPassword})
+      VALUES (${full_name}, ${email}, ${role}, ${department}, 'active', ${password})
       RETURNING *
     `;
 
-    console.log(`✅ DB record created: ${user.id}`);
-
     res.status(201).json({
-      message: "✅ Account created successfully!",
-      details: `User can login with temporary password sent via Firebase.`,
+      message: "✅ Account created successfully! Password stored in DB matches Firebase.",
       userId: user.id,
       email: user.email,
-      temporaryPassword: tempPassword,
-      note: "Please change password after first login",
     });
 
   } catch (err) {
     console.error("❌ Error creating account:", err);
-    res.status(500).json({ 
-      message: "Failed to create account",
-      error: err.message 
-    });
+    res.status(500).json({ message: "Failed to create account", error: err.message });
   }
 };
+
 
 // 🟢 Login (plain password comparison)
 export const login = async (req, res) => {
