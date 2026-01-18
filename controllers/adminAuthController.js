@@ -103,7 +103,7 @@ export const createAccount = async (req, res) => {
     `;
 
     // Setup password link
-    const setupLink = `https://ezleave-admin.vercel.app/setup-password?token=${token}`;
+    const setupLink = `http://localhost:3001/setup-password?token=${token}`;
 
     // Send email
     await transporter.sendMail({
