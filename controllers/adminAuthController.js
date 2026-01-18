@@ -51,7 +51,6 @@ export const fetchInactiveAccounts = async (req, res) => {
 };
 
 // 🟢 Create Account (plain password)
-// 🟢 Create Account (store Firebase password in DB)
 export const createAccount = async (req, res) => {
   try {
     let { full_name, email, role, department, password } = req.body;
