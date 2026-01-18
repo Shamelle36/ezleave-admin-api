@@ -50,15 +50,14 @@ export const fetchInactiveAccounts = async (req, res) => {
   }
 };
 
-// 🟢 Create Account (Simplified - No Firebase, No Nodemailer)
 export const createAccount = async (req, res) => {
   try {
-    let { full_name, email, role, department } = req.body;
+    let { full_name, email, role, department, password: tempPassword } = req.body; // get temp password from frontend
 
     // Validate required fields
-    if (!full_name || !email || !role) {
+    if (!full_name || !email || !role || !tempPassword) {
       return res.status(400).json({ 
-        message: "Missing required fields: full_name, email, role" 
+        message: "Missing required fields: full_name, email, role, or password" 
       });
     }
 
@@ -82,31 +81,23 @@ export const createAccount = async (req, res) => {
       return res.status(400).json({ message: "Email already exists." });
     }
 
-    // Insert into DB without Firebase
+    // Insert into DB with temporary password hashed
+    const hashedPassword = await bcrypt.hash(tempPassword, 10);
+
     const [user] = await sql`
-      INSERT INTO admin_accounts (full_name, email, role, department, status)
-      VALUES (${full_name}, ${email}, ${role}, ${department}, 'active')
+      INSERT INTO admin_accounts (full_name, email, role, department, status, password_hash)
+      VALUES (${full_name}, ${email}, ${role}, ${department}, 'active', ${hashedPassword})
       RETURNING *
     `;
 
     console.log(`✅ DB record created: ${user.id}`);
 
-    // Generate temporary password
-    const tempPassword = Math.random().toString(36).slice(-8) + "A1!";
-    const hashedPassword = await bcrypt.hash(tempPassword, 10);
-    
-    await sql`
-      UPDATE admin_accounts
-      SET password_hash = ${hashedPassword}
-      WHERE id = ${user.id}
-    `;
-
     res.status(201).json({
       message: "✅ Account created successfully!",
-      details: `User can login with password: ${tempPassword}`,
+      details: `User can login with temporary password sent via Firebase.`,
       userId: user.id,
       email: user.email,
-      temporaryPassword: tempPassword,
+      temporaryPassword: tempPassword, // optional to show in admin panel
       note: "Please change password after first login",
     });
 
