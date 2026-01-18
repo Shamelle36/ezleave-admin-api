@@ -716,3 +716,78 @@ export const changePassword = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
+// Add to adminAuthController.js (if not already there)
+export const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    // Check if user exists
+    const users = await sql`
+      SELECT * FROM admin_accounts WHERE email = ${email}
+    `;
+
+    if (users.length === 0) {
+      // For security, don't reveal if email exists or not
+      return res.status(200).json({ 
+        message: "If your email exists in our system, you will receive password reset instructions." 
+      });
+    }
+
+    const user = users[0];
+
+    // Check if account is inactive
+    if (user.status === 'inactive') {
+      return res.status(400).json({ 
+        message: "Account is inactive. Please contact administrator to restore your account." 
+      });
+    }
+
+    // Generate reset token
+    const token = uuidv4();
+    const expiresAt = new Date(Date.now() + 1000 * 60 * 60); // 1 hour
+
+    // Delete any existing reset tokens for this user
+    await sql`
+      DELETE FROM password_tokens 
+      WHERE user_id = ${user.id} AND type = 'reset'
+    `;
+
+    // Insert new reset token
+    await sql`
+      INSERT INTO password_tokens (user_id, token, type, expires_at)
+      VALUES (${user.id}, ${token}, 'reset', ${expiresAt})
+    `;
+
+    // Create reset link
+    const resetLink = `https://ezleave-admin.vercel.app/reset-password?token=${token}`;
+
+    // Send email
+    try {
+      await transporter.sendMail({
+        from: `"EZLeave Admin" <${process.env.EMAIL_USER}>`,
+        to: email,
+        subject: "Password Reset Request",
+        html: `<p>Hello ${user.full_name},</p>
+               <p>You have requested to reset your password. Please click the link below to set a new password:</p>
+               <a href="${resetLink}">${resetLink}</a>
+               <p>This link is valid for 1 hour.</p>
+               <p>If you didn't request this, please ignore this email.</p>`,
+      });
+    } catch (emailError) {
+      console.error("Email error:", emailError);
+    }
+
+    res.status(200).json({ 
+      message: "If your email exists in our system, you will receive password reset instructions." 
+    });
+
+  } catch (err) {
+    console.error("Forgot password error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};

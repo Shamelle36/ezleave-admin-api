@@ -331,3 +331,135 @@ export const changePassword = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
+// Add to authController.js
+export const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    // Check if user exists
+    const result = await sql`
+      SELECT * FROM useradmin WHERE email = ${email}
+    `;
+
+    if (result.length === 0) {
+      // For security, don't reveal if email exists or not
+      return res.status(200).json({ 
+        message: "If your email exists in our system, you will receive password reset instructions." 
+      });
+    }
+
+    const user = result[0];
+
+    // Generate reset token
+    // eslint-disable-next-line no-undef
+    const token = uuidv4();
+    const expiresAt = new Date(Date.now() + 1000 * 60 * 60); // 1 hour
+
+    // Delete any existing reset tokens for this user
+    await sql`
+      DELETE FROM password_tokens 
+      WHERE user_id = ${user.id} AND type = 'reset'
+    `;
+
+    // Insert new reset token
+    await sql`
+      INSERT INTO password_tokens (user_id, token, type, expires_at)
+      VALUES (${user.id}, ${token}, 'reset', ${expiresAt})
+    `;
+
+    // Create reset link
+    const resetLink = `https://ezleave-admin.vercel.app/reset-password?token=${token}`;
+
+    // Send email (you'll need to configure nodemailer)
+    try {
+      // If you have nodemailer configured, use it here
+      // await transporter.sendMail({
+      //   from: process.env.EMAIL_USER,
+      //   to: email,
+      //   subject: "Password Reset Request",
+      //   html: `<p>Click this link to reset your password: <a href="${resetLink}">${resetLink}</a></p>`
+      // });
+      
+      console.log(`Password reset link for ${email}: ${resetLink}`);
+    } catch (emailError) {
+      console.error("Email error:", emailError);
+    }
+
+    // Log activity
+    await logActivity(
+      user.id,
+      user.role,
+      "Password Reset Requested",
+      "User requested password reset",
+      req.ip
+    );
+
+    res.status(200).json({ 
+      message: "If your email exists in our system, you will receive password reset instructions." 
+    });
+
+  } catch (err) {
+    console.error("Forgot password error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+export const resetPassword = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { password } = req.body;
+
+    if (!password || password.length < 6) {
+      return res.status(400).json({ message: "Password must be at least 6 characters" });
+    }
+
+    // Find valid token
+    const tokens = await sql`
+      SELECT * FROM password_tokens 
+      WHERE token = ${token} AND type = 'reset' AND used = false AND expires_at > NOW()
+    `;
+
+    if (tokens.length === 0) {
+      return res.status(400).json({ message: "Invalid or expired token" });
+    }
+
+    const tokenData = tokens[0];
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Update user password
+    await sql`
+      UPDATE useradmin 
+      SET password = ${hashedPassword}
+      WHERE id = ${tokenData.user_id}
+    `;
+
+    // Mark token as used
+    await sql`
+      UPDATE password_tokens 
+      SET used = true 
+      WHERE id = ${tokenData.id}
+    `;
+
+    // Log activity
+    await logActivity(
+      tokenData.user_id,
+      'user',
+      "Password Reset",
+      "User reset their password via reset link",
+      req.ip
+    );
+
+    res.status(200).json({ message: "Password reset successful. You can now login with your new password." });
+
+  } catch (err) {
+    console.error("Reset password error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
