@@ -112,43 +112,35 @@ export const createAccount = async (req, res) => {
     console.log(`✅ DB record created for user: ${user.id}`);
 
     try {
-      // --- Step 2: Create Firebase user WITHOUT password initially ---
+      // --- Step 2: Create Firebase user WITH a temporary password ---
+      const tempPassword = uuidv4().slice(0, 12) + "Aa1!"; // Strong temporary password
       console.log(`Creating Firebase user for: ${email}`);
       
       const firebaseUser = await admin.auth().createUser({
         uid: `admin-${user.id}`,
         email,
         emailVerified: false,
+        password: tempPassword, // Add a temporary password
         displayName: full_name,
         disabled: false,
       });
 
       console.log(`✅ Firebase user created: ${firebaseUser.uid}`);
 
-      // --- Step 3: Generate Firebase password reset link (Firebase will send the email) ---
+      // --- Step 3: Generate Firebase password reset link ---
       console.log(`Generating password reset link for: ${email}`);
       
       // This will automatically send a password reset email using Firebase's email service
       const resetLink = await admin.auth().generatePasswordResetLink(email, {
         // URL where user will be redirected after clicking the email link
         url: `https://ezleave-admin.vercel.app/setup-password`,
-        handleCodeInApp: false, // Set to true if using Firebase Dynamic Links
-        // Configure the email template
-        dynamicLinkDomain: "ezleave.page.link", // Optional: if using Firebase Dynamic Links
+        handleCodeInApp: false,
+        // Optional: Customize the email template
+        // dynamicLinkDomain: "ezleave.page.link",
       });
 
       console.log(`✅ Firebase password reset email sent to: ${email}`);
-      console.log(`Reset link: ${resetLink}`);
-
-      // You can also customize the email template if needed
-      // await admin.auth().updateProjectConfig({
-      //   emailTemplate: {
-      //     resetPasswordUrl: resetLink,
-      //     // Customize email content
-      //     subject: "Set up your EZLeave Admin password",
-      //     body: `Hello ${full_name},<br><br>An admin has created an account for you.<br><br>Click the link below to set your password:`
-      //   }
-      // });
+      console.log(`Reset link generated (first 50 chars): ${resetLink.substring(0, 50)}...`);
 
       res.status(201).json({
         message: "✅ Account created successfully!",
@@ -161,6 +153,11 @@ export const createAccount = async (req, res) => {
 
     } catch (firebaseError) {
       console.error("❌ Firebase operation failed:", firebaseError);
+      console.error("Firebase error details:", {
+        code: firebaseError.code,
+        message: firebaseError.message,
+        stack: firebaseError.stack
+      });
       
       // Rollback DB insertion if Firebase fails
       await sql`DELETE FROM admin_accounts WHERE id = ${user.id}`;
@@ -173,8 +170,18 @@ export const createAccount = async (req, res) => {
         });
       }
       
+      // Provide more specific error messages
+      let errorMessage = "Failed to create authentication account";
+      if (firebaseError.code === 'auth/invalid-email') {
+        errorMessage = "Invalid email address format";
+      } else if (firebaseError.code === 'auth/weak-password') {
+        errorMessage = "Password is too weak";
+      } else if (firebaseError.code === 'auth/operation-not-allowed') {
+        errorMessage = "Email/password accounts are not enabled in Firebase";
+      }
+      
       res.status(500).json({ 
-        message: "Failed to create authentication account",
+        message: errorMessage,
         error: firebaseError.message || "Firebase authentication error",
         code: firebaseError.code
       });
@@ -182,6 +189,11 @@ export const createAccount = async (req, res) => {
 
   } catch (err) {
     console.error("❌ Error creating account:", err);
+    console.error("General error details:", {
+      message: err.message,
+      stack: err.stack
+    });
+    
     res.status(500).json({ 
       message: "Internal server error",
       error: err.message 
