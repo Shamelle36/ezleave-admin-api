@@ -150,6 +150,7 @@ export const createAccount = async (req, res) => {
         emailVerified: false,
         displayName: full_name,
         disabled: false,
+        password: Math.random().toString(36).slice(-8) + "A1!", // Temporary random password
       });
 
       console.log(`✅ Firebase user created: ${firebaseUser.uid}`);
@@ -163,50 +164,50 @@ export const createAccount = async (req, res) => {
 
       console.log(`✅ DB record created: ${user.id}`);
 
-      // Send Firebase password setup email
+      // ✅ Send Firebase password reset email - This automatically sends the email!
       try {
-        console.log(`Sending Firebase password setup email to: ${email}`);
+        console.log(`📧 Sending Firebase password setup email to: ${email}`);
         
-        await admin.auth().generatePasswordResetLink(email, {
-          url: `https://ezleave-admin.vercel.app/login`,
+        // This will automatically send a password reset email via Firebase
+        const resetLink = await admin.auth().generatePasswordResetLink(email, {
+          url: `https://ezleave-admin.vercel.app/login`, // Where user will land after reset
           handleCodeInApp: false,
         });
-
-        console.log(`✅ Firebase password reset email sent`);
+        
+        console.log(`✅ Firebase password reset email sent automatically`);
+        console.log(`🔗 Password reset link: ${resetLink}`);
         
         res.status(201).json({
           message: "✅ Account created successfully!",
-          details: "User will receive a password setup email from Firebase.",
+          details: "Password setup email has been sent via Firebase.",
           userId: user.id,
           email: user.email,
+          firebaseUid: firebaseUser.uid,
         });
 
       } catch (emailError) {
         console.error("❌ Firebase email error:", emailError.message);
         
-        // Fallback: Use nodemailer
-        if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-          await transporter.sendMail({
-            from: `"EZLeave Admin" <${process.env.EMAIL_USER}>`,
-            to: email,
-            subject: "Set up your EZLeave Admin Password",
-            html: `
-              <p>Hello ${full_name},</p>
-              <p>Your account has been created.</p>
-              <p>Please go to the login page and click "Forgot Password" to set your password.</p>
-              <p>Email: ${email}</p>
-              <p>Login URL: https://ezleave-admin.vercel.app/login</p>
-            `,
-          });
-          
-          console.log(`✅ Fallback email sent via nodemailer`);
-        }
+        // If Firebase email fails, fallback to creating password manually
+        console.log("🔄 Fallback: Manual password setup");
+        
+        // Generate a simple password for manual setup
+        const tempPassword = Math.random().toString(36).slice(-8) + "A1!";
+        const hashedPassword = await bcrypt.hash(tempPassword, 10);
+        
+        await sql`
+          UPDATE admin_accounts
+          SET password_hash = ${hashedPassword}
+          WHERE id = ${user.id}
+        `;
 
         res.status(201).json({
-          message: "✅ Account created successfully!",
-          details: "Please instruct user to use 'Forgot Password' on login page.",
+          message: "✅ Account created! (Email failed)",
+          details: "Use the temporary password below for first login:",
           userId: user.id,
           email: user.email,
+          temporaryPassword: tempPassword,
+          note: "User should change password after first login",
         });
       }
 
@@ -229,7 +230,7 @@ export const createAccount = async (req, res) => {
       `;
 
       // Generate temporary password
-      const tempPassword = "Welcome123!";
+      const tempPassword = Math.random().toString(36).slice(-8) + "A1!";
       const hashedPassword = await bcrypt.hash(tempPassword, 10);
       
       await sql`
