@@ -50,9 +50,10 @@ export const fetchInactiveAccounts = async (req, res) => {
   }
 };
 
+// 🟢 Create Account (plain password)
 export const createAccount = async (req, res) => {
   try {
-    let { full_name, email, role, department, password: tempPassword } = req.body; // get temp password from frontend
+    let { full_name, email, role, department, password: tempPassword } = req.body;
 
     // Validate required fields
     if (!full_name || !email || !role || !tempPassword) {
@@ -81,12 +82,10 @@ export const createAccount = async (req, res) => {
       return res.status(400).json({ message: "Email already exists." });
     }
 
-    // Insert into DB with temporary password hashed
-    const hashedPassword = await bcrypt.hash(tempPassword, 10);
-
+    // Insert into DB with plain password (no hash)
     const [user] = await sql`
       INSERT INTO admin_accounts (full_name, email, role, department, status, password_hash)
-      VALUES (${full_name}, ${email}, ${role}, ${department}, 'active', ${hashedPassword})
+      VALUES (${full_name}, ${email}, ${role}, ${department}, 'active', ${tempPassword})
       RETURNING *
     `;
 
@@ -97,7 +96,7 @@ export const createAccount = async (req, res) => {
       details: `User can login with temporary password sent via Firebase.`,
       userId: user.id,
       email: user.email,
-      temporaryPassword: tempPassword, // optional to show in admin panel
+      temporaryPassword: tempPassword,
       note: "Please change password after first login",
     });
 
@@ -110,7 +109,7 @@ export const createAccount = async (req, res) => {
   }
 };
 
-// 🟢 Login for admin/head/mayor (Simplified - No Firebase)
+// 🟢 Login (plain password comparison)
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -131,14 +130,8 @@ export const login = async (req, res) => {
       });
     }
 
-    // Check if user has password set
-    if (!user.password_hash) {
-      return res.status(400).json({ message: "Password not yet set. Contact administrator." });
-    }
-
-    // Verify password
-    const valid = await bcrypt.compare(password, user.password_hash);
-    if (!valid) {
+    // Check password directly (no hashing)
+    if (password !== user.password_hash) {
       return res.status(401).json({ message: "Invalid credentials." });
     }
 
@@ -168,6 +161,7 @@ export const login = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
 
 export const getUserById = async (req, res) => {
   const { id } = req.params;
