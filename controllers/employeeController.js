@@ -389,27 +389,43 @@ export const getEmployeeById = async (req, res) => {
   }
 };
 
+
 // 📌 Get employee signature
-// In your employeeController.js
-export const getEmployeeByUserId = async (req, res) => {
-  const { userId } = req.params;
-  
+export const getEmployeeSignature = async (req, res) => {
+  const { id } = req.params;
   try {
     const result = await sql`
-      SELECT id, first_name, last_name, signature_url
+      SELECT 
+        id,
+        first_name,
+        last_name,
+        signature_url,
+        signature_uploaded_at,
+        cloudinary_public_id
       FROM employee_list
-      WHERE user_id = ${userId}
-      LIMIT 1;
+      WHERE id = ${id};
     `;
 
     if (result.length === 0) {
-      return res.status(404).json({ error: "Employee not found for this user_id" });
+      return res.status(404).json({ error: "Employee not found" });
     }
 
-    res.json(result[0]);
+    const employee = result[0];
+    
+    if (!employee.signature_url) {
+      return res.status(404).json({ error: "No signature found for this employee" });
+    }
+
+    res.json({
+      success: true,
+      signature_url: employee.signature_url,
+      uploaded_at: employee.signature_uploaded_at,
+      public_id: employee.cloudinary_public_id,
+      employee_name: `${employee.first_name} ${employee.last_name}`
+    });
   } catch (error) {
-    console.error("Error fetching employee by user_id:", error);
-    res.status(500).json({ error: "Failed to fetch employee" });
+    console.error("Error fetching signature:", error);
+    res.status(500).json({ error: "Failed to fetch signature" });
   }
 };
 
