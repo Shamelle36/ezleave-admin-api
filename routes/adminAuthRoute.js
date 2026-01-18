@@ -2,7 +2,6 @@
 import express from "express";
 import {
   createAccount,
-  setupPassword,
   login,
   fetchAccounts,
   getUserById,
@@ -25,7 +24,6 @@ router.get("/accounts", fetchAccounts)
 router.post("/createAccount", createAccount);
 
 // Setup password (for heads and mayor)
-router.post("/setup-password/:token", setupPassword);
 
 // Login (for admin, head, mayor)
 router.post("/login", login);
