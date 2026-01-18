@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import { v4 as uuidv4 } from "uuid";
 import sql from "../config/db.js"; // your Neon DB connection using postgres package
 import nodemailer from "nodemailer";
+import admin from "firebase-admin";
 
 // Utility: generate JWT token
 const generateToken = (user) => {
@@ -17,6 +18,16 @@ const generateToken = (user) => {
     { expiresIn: "7d" }
   );
 };
+
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: "ezleave-admin",
+      clientEmail: "firebase-adminsdk-fbsvc@ezleave-admin.iam.gserviceaccount.com",
+      privateKey: "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC1xptkahGhxfbr\nCjCqSNmA6Bb/piU37iXKkO7Y6TsfVLj+bPDnOrlONq+9jQAGuG3t9m+bcieKsvoT\nElbgnoYt63aDHukmVp2TQ/uBeTGMMmkQn/fLkPLpG58Fa/JjPNm5N8+OBwu1THtk\nONP/s6I+CzSzqnWHm6GMIw/+Lu6K1/WbPWhH2Jv4FZ1Bnm3AGlpLrvwmSQG/Xrqj\no6RCK16vOk35qKzcwa4yT2GlfqYf+sSbLnF2HSFnN+gOY1CpbRqekSNhDVJfsPso\n0Htm2aEfiRx09CHADlLU018pMJtaAp6TDk7izyKO4UBSUqGOC80iZC7FyBSQMm/g\nVEcnFoePAgMBAAECggEATEsD/HTCWr4+gO7hdw8lbwO6Z2lh9KQZK3iCLvtRC7jg\n/jRWNg7BKNEuGKYd7TQqO3az6C/U5dNxv2Byo0sVsR9DOgxWufcfouglHvXxdFDS\nJR6m/8MiGPG1YC6q6Ljo/uKsVAWkBd+IaIurewZ3oYfNgl0YgCazeqBavYoQJ6h/\n9N+7gD/7AidV8h2j94qibS3lii7wAIGznV/e5PApKdLhoelFRIewF5Qst81xhRp7\nydPoQY7Sz6mXp42WxupEF+HiaC6rs9NG9NJo1e0W5yMdhikrjpD6Vbvgs12X3tat\nwGG4N1JthcEvBtglkE7ZLDXBvhh2LCQ31x74pHibfQKBgQDpN50n1rro1LwXe6wo\nM6rpPJvZiJlXgb8fvvBCQEzI7WOXs5sBMWlIo+ZaXSA964nrlHcm08Y6s0vbyXbZ\n+BD5uNxxJYcgVMpmk6XYoWMhHRW81vYifZlAC3jb+DLZfTqsliKcurbw73zLSewz\nlFq3Lj8ft2C53xVMzAKP3s4duwKBgQDHiIarEjH48ELO43xTHce0LpInVEOrt2SW\nw9ooUgBUsV6offhYyeVE8nYl/bGE7OwGhSOTkWLe/gBL+Tp9Uu1W1YC0ij283TyT\n/tQ0tterk+J35qKjfc/LEM9VSsvoSVwDLV9kxPmLBK1pSFidRy6GMuufLMLKvvCy\nYQrVC9w2PQKBgQDYPUasT7+Sbt3P8E3aIL4R8K6Y7r0vlBAAgWwIIdKQYvv7Bv9s\nBcKXJdFKbBqfDywckNZB3A5rEx/9NDnNNOOYiD1tc9xsr/HTVodp64ocg/lJ1Q73\nP/m+lmSDoQiU/DZRHAwPwlgp4gSWAX7O/Hl4a5r/72nyLdR0Fp0xhOccTQKBgAdw\n4/TFPO/XpeYpPZ2r4qKpifHFhrCEqk+lBiGyzShbZPhLmlNVVCN6F0XbbB9U5ohn\ntqfuKA3A0yoCJVg/G3K9i4swDJVaesPaIPfGScywOyXViAMo0fL0sYawv2HuOmwz\n6PbNEbFJf14JwKQ831NJ2teYx7rf3AIK9Gh1hMTRAoGASoHVm9PDEAeE6hxDwVq3\nYou2GxqyEaZoYcoJOBR32EVdb3u2FdNRsD6njHngPP/cjsjREkRll43zeZJV0w0V\nh9Ev6q+rH1AqzZNGnlD/a42GTWyWFglQ5QMr9A5XPRLIgRvKiMRyg1B+rv6DVfVb\n1ThqDzo+HlpqS3pyd8Yne2c=\n-----END PRIVATE KEY-----\n".replace(/\\n/g, "\n"),
+    }),
+  });
+}
 
 // Setup NodeMailer transporter
 const transporter = nodemailer.createTransport({
@@ -60,67 +71,66 @@ export const fetchInactiveAccounts = async (req, res) => {
   }
 };
 
-// 🟢 1. Admin creates new account for Head/Mayor
 export const createAccount = async (req, res) => {
   try {
     let { full_name, email, role, department } = req.body;
 
-    // Normalize role to match DB constraint
-    role = role.toLowerCase().replace(" ", "_"); // "Office Head" → "office_head"
+    // Normalize role for DB
+    role = role.toLowerCase().replace(" ", "_");
 
-    // Check if email already exists (including inactive accounts)
+    // Check if email already exists
     const existing = await sql`
       SELECT * FROM admin_accounts WHERE email = ${email}
     `;
-
     if (existing.length > 0) {
       const existingAccount = existing[0];
-      
-      // If account is inactive, offer to restore it instead
-      if (existingAccount.status === 'inactive') {
-        return res.status(400).json({ 
-          message: "This email belongs to an inactive account. Please restore the account instead of creating a new one." 
+      if (existingAccount.status === "inactive") {
+        return res.status(400).json({
+          message:
+            "This email belongs to an inactive account. Please restore it instead.",
         });
       }
-      
       return res.status(400).json({ message: "Email already exists." });
     }
 
-    // Insert new account (no password yet) - default status is 'active'
+    // --- Step 1: Insert into DB ---
     const [user] = await sql`
       INSERT INTO admin_accounts (full_name, email, role, department, status)
       VALUES (${full_name}, ${email}, ${role}, ${department}, 'active')
       RETURNING *
     `;
 
-    // Generate setup token
-    const token = uuidv4();
-    const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24); // valid for 24 hours
+    // --- Step 2: Create Firebase user with temporary password ---
+    const tempPassword = uuidv4().slice(0, 8); // random 8-char password
+    await admin.auth().createUser({
+      uid: `admin-${user.id}`,
+      email,
+      password: tempPassword,
+      displayName: full_name,
+    });
 
-    await sql`
-      INSERT INTO password_tokens (user_id, token, type, expires_at)
-      VALUES (${user.id}, ${token}, 'setup', ${expiresAt})
-    `;
+    // --- Step 3: Generate Firebase password reset link ---
+    const resetLink = await admin.auth().generatePasswordResetLink(email, {
+      url: `https://ezleave-admin.vercel.app/setup-password`,
+    });
 
-    // Setup password link
-    const setupLink = `https://ezleave-admin.vercel.app/setup-password?token=${token}`;
-
-    // Send email
+    // --- Step 4: Send setup email ---
     await transporter.sendMail({
       from: `"EZLeave Admin" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: "Set up your EZLeave password",
       html: `<p>Hello ${full_name},</p>
              <p>An admin has created an account for you. Please set your password by clicking the link below:</p>
-             <a href="${setupLink}">${setupLink}</a>
-             <p>This link is valid for 24 hours.</p>`,
+             <a href="${resetLink}">${resetLink}</a>
+             <p>This link will allow you to set your password and log in.</p>`,
     });
 
     res.status(201).json({
-      message: "✅ Account created! Email sent for password setup.",
+      message:
+        "✅ Account created successfully! User will receive an email to set their password.",
     });
   } catch (err) {
-    console.error("❌ Error creating account:", err);
+    console.error("❌ Error creating account with Firebase:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 };
