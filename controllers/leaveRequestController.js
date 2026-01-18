@@ -239,6 +239,7 @@ export async function getLeaveRequests(req, res) {
         el.position,
         lr.salary,
         el.profile_picture,
+        el.signature_url,
         TO_CHAR(lr.date_filing, 'FMMonth DD, YYYY') AS date_filing,
         lr.leave_type,
         lr.details,
