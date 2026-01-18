@@ -717,7 +717,6 @@ export const changePassword = async (req, res) => {
   }
 };
 
-// Add to adminAuthController.js (if not already there)
 export const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
@@ -726,12 +725,15 @@ export const forgotPassword = async (req, res) => {
       return res.status(400).json({ message: "Email is required" });
     }
 
+    console.log(`🔐 Forgot password request for: ${email}`);
+
     // Check if user exists
     const users = await sql`
       SELECT * FROM admin_accounts WHERE email = ${email}
     `;
 
     if (users.length === 0) {
+      console.log(`❌ Email not found: ${email}`);
       // For security, don't reveal if email exists or not
       return res.status(200).json({ 
         message: "If your email exists in our system, you will receive password reset instructions." 
@@ -739,9 +741,11 @@ export const forgotPassword = async (req, res) => {
     }
 
     const user = users[0];
+    console.log(`✅ User found: ${user.full_name} (${user.email})`);
 
     // Check if account is inactive
     if (user.status === 'inactive') {
+      console.log(`⚠️ Account inactive: ${email}`);
       return res.status(400).json({ 
         message: "Account is inactive. Please contact administrator to restore your account." 
       });
@@ -763,31 +767,81 @@ export const forgotPassword = async (req, res) => {
       VALUES (${user.id}, ${token}, 'reset', ${expiresAt})
     `;
 
-    // Create reset link
+    // Create reset link - USE YOUR ACTUAL FRONTEND URL
     const resetLink = `https://ezleave-admin.vercel.app/reset-password?token=${token}`;
+    // OR if you're on Render: 
+    // const resetLink = `https://ezleave-admin.onrender.com/reset-password?token=${token}`;
 
-    // Send email
+    console.log(`📧 Sending reset email to: ${email}`);
+    console.log(`🔗 Reset link: ${resetLink}`);
+
+    // Send email - make sure transporter is configured
     try {
-      await transporter.sendMail({
+      // Check if email credentials are configured
+      if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+        console.error("❌ Email credentials not configured in environment variables");
+        console.log(`📋 Manual reset link for ${user.full_name}: ${resetLink}`);
+        
+        // Return success but mention email wasn't sent
+        return res.status(200).json({ 
+          message: "Password reset initiated. Please contact administrator for reset link.",
+          debug_link: process.env.NODE_ENV === 'development' ? resetLink : undefined
+        });
+      }
+
+      // Send actual email
+      const mailOptions = {
         from: `"EZLeave Admin" <${process.env.EMAIL_USER}>`,
         to: email,
-        subject: "Password Reset Request",
-        html: `<p>Hello ${user.full_name},</p>
-               <p>You have requested to reset your password. Please click the link below to set a new password:</p>
-               <a href="${resetLink}">${resetLink}</a>
-               <p>This link is valid for 1 hour.</p>
-               <p>If you didn't request this, please ignore this email.</p>`,
+        subject: "Password Reset Request - EZLeave Admin",
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
+            <h2 style="color: #4285f4; text-align: center;">EZLeave Admin Password Reset</h2>
+            <p>Hello <strong>${user.full_name}</strong>,</p>
+            <p>You have requested to reset your password for the EZLeave Admin system.</p>
+            <p>Please click the button below to set a new password:</p>
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${resetLink}" style="background-color: #4285f4; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+                Reset Password
+              </a>
+            </div>
+            <p>Or copy and paste this link in your browser:</p>
+            <p style="background-color: #f5f5f5; padding: 10px; border-radius: 5px; word-break: break-all;">
+              ${resetLink}
+            </p>
+            <p>This link will expire in <strong>1 hour</strong>.</p>
+            <p>If you didn't request this password reset, please ignore this email or contact your administrator.</p>
+            <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 20px 0;">
+            <p style="color: #666; font-size: 12px; text-align: center;">
+              This is an automated message from EZLeave Admin System.
+            </p>
+          </div>
+        `,
+        text: `Hello ${user.full_name},\n\nYou requested a password reset for EZLeave Admin.\n\nReset link: ${resetLink}\n\nThis link expires in 1 hour.\n\nIf you didn't request this, please ignore this email.`
+      };
+
+      const info = await transporter.sendMail(mailOptions);
+      console.log(`✅ Email sent successfully to ${email}:`, info.messageId);
+
+      res.status(200).json({ 
+        message: "Password reset instructions have been sent to your email address." 
       });
+
     } catch (emailError) {
-      console.error("Email error:", emailError);
+      console.error("❌ Email sending failed:", emailError);
+      
+      // Log the reset link for debugging
+      console.log(`📋 Reset link that would have been sent: ${resetLink}`);
+      
+      // Still return success but mention email might fail
+      res.status(200).json({ 
+        message: "Password reset initiated. If you don't receive an email, please contact administrator.",
+        debug_note: process.env.NODE_ENV === 'development' ? 'Email service error: ' + emailError.message : undefined
+      });
     }
 
-    res.status(200).json({ 
-      message: "If your email exists in our system, you will receive password reset instructions." 
-    });
-
   } catch (err) {
-    console.error("Forgot password error:", err);
+    console.error("❌ Forgot password error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 };
