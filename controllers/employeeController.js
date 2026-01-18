@@ -130,7 +130,6 @@ export const addEmployee = async (req, res) => {
         { type: "ML", days: 5 },
         { type: "SPL", days: 3 },
         { type: "SOLO", days: 7 },
-        { type: "VAWC", days: 10 },
         { type: "RL", days: 0 },
         { type: "STUDY", days: 180 },
         { type: "CALAMITY", days: 5 },
@@ -177,7 +176,8 @@ export const addEmployee = async (req, res) => {
               used_days
             ) VALUES
               (${employee.id}, 'MAT', ${year}, 105, 0),
-              (${employee.id}, 'MCW', ${year}, 60, 0)
+              (${employee.id}, 'MCW', ${year}, 60, 0),
+              (${employee.id}, 'VAWC', ${year}, 10, 0)
             ON CONFLICT (user_id, leave_type, year) DO NOTHING;
           `;
         } catch (error) {
