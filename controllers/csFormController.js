@@ -183,6 +183,7 @@ export const generateCSForm = async (req, res) => {
         el.first_name,
         el.middle_name, 
         el.last_name,
+        el.signature_url as employee_signature_url,
         lr.salary,
         lr.remarks,
         lr.approved_by,
@@ -247,7 +248,8 @@ export const generateCSForm = async (req, res) => {
       sick_leave_earned = "",
       vacation_leave_balance = "",
       sick_leave_balance = "",
-      signature_url= ""
+      signature_url= "",
+       employee_signature_url = ""
     } = leaveApplication;
 
     // Determine if HR has approved - only then show leave credit values in 7.A
