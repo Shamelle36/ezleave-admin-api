@@ -158,47 +158,64 @@ export const getAttendanceLogs = async (req, res) => {
     // Get time settings for this date
     const timeSettings = await getTimeSettingsForDate(formattedDate);
 
-    // Fetch employees, attendance, and leave applications
     const result = await sql`
-      SELECT el.id, el.id_number, el.first_name, el.last_name,
-       CONCAT(el.first_name, ' ', el.last_name) AS name,
-       al.attendance_date,
-       al.am_checkin, al.am_checkout,
-       al.pm_checkin, al.pm_checkout,
-       MAX(la.leave_type) AS leave_type
-        FROM employee_list el
-        LEFT JOIN attendance_logs al
-          ON el.id_number = al.pin AND al.attendance_date = ${formattedDate}
-        LEFT JOIN leave_applications la
-          ON el.user_id = la.user_id 
-            AND ${formattedDate}::date <@ la.inclusive_dates
-            AND la.status = 'Approved'
-        GROUP BY el.id, el.id_number, el.first_name, el.last_name, 
-                al.attendance_date, al.am_checkin, al.am_checkout,
-                al.pm_checkin, al.pm_checkout
-        ORDER BY el.last_name ASC
+      SELECT 
+        el.id,
+        el.id_number,
+        CONCAT(el.first_name, ' ', el.last_name) AS name,
+        al.attendance_date,
+
+        -- 🔥 FETCH TIME DIRECTLY AS STRING (NO TZ CONVERSION)
+        to_char(al.am_checkin, 'HH12:MI AM') AS am_checkin,
+        to_char(al.am_checkout, 'HH12:MI AM') AS am_checkout,
+        to_char(al.pm_checkin, 'HH12:MI AM') AS pm_checkin,
+        to_char(al.pm_checkout, 'HH12:MI AM') AS pm_checkout,
+
+        MAX(la.leave_type) AS leave_type
+
+      FROM employee_list el
+      LEFT JOIN attendance_logs al
+        ON el.id_number = al.pin 
+        AND al.attendance_date = ${formattedDate}
+      LEFT JOIN leave_applications la
+        ON el.user_id = la.user_id
+        AND ${formattedDate}::date <@ la.inclusive_dates
+        AND la.status = 'Approved'
+      GROUP BY 
+        el.id, el.id_number, el.first_name, el.last_name,
+        al.attendance_date,
+        al.am_checkin, al.am_checkout,
+        al.pm_checkin, al.pm_checkout
+      ORDER BY el.last_name ASC
     `;
 
     const logs = result.map(row => {
-      // Helper function to extract time from timestamp
-      const extractTime = (timestamp) => {
-        if (!timestamp) return null;
-        return timestamp.toString().substring(11, 16); // Get HH:MM
+      const extractTime = (timeStr) => {
+        if (!timeStr) return null;
+        const [time, modifier] = timeStr.split(" ");
+        let [hour, minute] = time.split(":").map(Number);
+
+        if (modifier === "PM" && hour !== 12) hour += 12;
+        if (modifier === "AM" && hour === 12) hour = 0;
+
+        return `${hour.toString().padStart(2, "0")}:${minute}`;
       };
-      
-      // Check if AM checkin is late
+
       const amCheckinTime = extractTime(row.am_checkin);
-      const isAmLate = amCheckinTime ? isCheckinLate(amCheckinTime, timeSettings) : false;
-      
-      // Check if PM checkin is late (only if no AM checkin)
       const pmCheckinTime = extractTime(row.pm_checkin);
-      const isPmLate = !row.am_checkin && pmCheckinTime ? isCheckinLate(pmCheckinTime, timeSettings) : false;
-      
+
+      const isAmLate = amCheckinTime
+        ? isCheckinLate(amCheckinTime, timeSettings)
+        : false;
+
+      const isPmLate = !row.am_checkin && pmCheckinTime
+        ? isCheckinLate(pmCheckinTime, timeSettings)
+        : false;
+
       const isLate = isAmLate || isPmLate;
 
-      // Determine status
       let status = "Absent";
-      if (row.leave_id) {
+      if (row.leave_type) {
         status = "On-Leave";
       } else if (row.am_checkin || row.pm_checkin) {
         status = isLate ? "Late" : "Present";
@@ -209,11 +226,14 @@ export const getAttendanceLogs = async (req, res) => {
         pin: row.id_number,
         name: row.name,
         attendance_date: formattedDate,
-        am_checkin: row.am_checkin ? formatPHTime(row.am_checkin) : null,
-        am_checkout: row.am_checkout ? formatPHTime(row.am_checkout) : null,
-        pm_checkin: row.pm_checkin ? formatPHTime(row.pm_checkin) : null,
-        pm_checkout: row.pm_checkout ? formatPHTime(row.pm_checkout) : null,
-        status: status,
+
+        // ✅ Already correct PH time
+        am_checkin: row.am_checkin,
+        am_checkout: row.am_checkout,
+        pm_checkin: row.pm_checkin,
+        pm_checkout: row.pm_checkout,
+
+        status,
         is_late: isLate,
         leave_type: row.leave_type || null
       };
@@ -225,6 +245,7 @@ export const getAttendanceLogs = async (req, res) => {
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
+
 
 // ==================== ATTENDANCE TIME SETTINGS CONTROLLERS ====================
 
