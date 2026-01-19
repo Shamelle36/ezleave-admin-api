@@ -678,3 +678,26 @@ export const forgotPassword = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
+// backend/controllers/adminAuthController.js
+
+export const getUserByEmail = async (req, res) => {
+  const { email } = req.params;
+
+  try {
+    const users = await sql`
+      SELECT id, full_name, email, role, department, profile_picture, status
+      FROM admin_accounts
+      WHERE email = ${email}
+    `;
+
+    if (users.length === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json(users[0]);
+  } catch (err) {
+    console.error("❌ Error fetching user by email:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};

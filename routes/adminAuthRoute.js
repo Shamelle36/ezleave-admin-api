@@ -14,7 +14,8 @@ import {
   resetPassword,
   processPasswordReset,
   changePassword,
-  forgotPassword
+  forgotPassword,
+  getUserByEmail
 } from "../controllers/adminAuthController.js";
 
 const router = express.Router();
@@ -47,5 +48,7 @@ router.post('/process-reset/:token', processPasswordReset);
 router.put("/change-password/:id", changePassword);
 
 router.post("/forgot-password", forgotPassword);
+
+router.get("/user-email/:email", getUserByEmail);
 
 export default router;
