@@ -174,28 +174,31 @@ export const getUserById = async (req, res) => {
 
 // 🟢 5. Update admin profile
 export const updateProfile = async (req, res) => {
-  console.log("=== UPDATE OFFICE HEAD PROFILE REQUEST ===");
-  console.log("Params:", req.params);
-  console.log("Body:", req.body);
-
-  const { id } = req.params;
-  const { full_name, department, profile_picture } = req.body;
-
   try {
-    if (!full_name && !department && !profile_picture) {
-      return res.status(400).json({ message: "No fields to update." });
+    console.log("=== UPDATE OFFICE HEAD PROFILE REQUEST ===");
+    console.log("Params:", req.params);
+    console.log("Body:", req.body);
+
+    const { id } = req.params;
+    const { full_name, department, profile_picture } = req.body;
+
+    if (!id) {
+      console.error("❌ Missing Office Head ID in request params");
+      return res.status(400).json({ message: "Missing Office Head ID" });
     }
 
-    // Check if account is active
+    // Check if account exists and is active
     const userCheck = await sql`
-      SELECT status FROM admin_accounts WHERE id = ${id}
+      SELECT * FROM admin_accounts WHERE id = ${id}
     `;
-    
+
     if (userCheck.length === 0) {
+      console.warn("⚠️ Office Head not found with ID:", id);
       return res.status(404).json({ message: "Account not found." });
     }
-    
-    if (userCheck[0].status === 'inactive') {
+
+    if (userCheck[0].status === "inactive") {
+      console.warn("⚠️ Cannot update inactive account:", id);
       return res.status(400).json({ message: "Cannot update inactive account." });
     }
 
@@ -205,18 +208,37 @@ export const updateProfile = async (req, res) => {
     if (department !== undefined) updates.department = department;
     if (profile_picture !== undefined) updates.profile_picture = profile_picture;
 
-    await sql`
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ message: "No fields to update." });
+    }
+
+    console.log("➡️ Executing SQL UPDATE for ID:", id, "with updates:", updates);
+
+    const result = await sql`
       UPDATE admin_accounts
       SET ${sql(updates)}
       WHERE id = ${id}
+      RETURNING id, full_name, department, profile_picture, status, created_at
     `;
 
-    res.json({ message: "✅ Office Head profile updated successfully!" });
+    if (result.length === 0) {
+      console.warn("⚠️ Office Head not found after update:", id);
+      return res.status(404).json({ message: "Account not found after update." });
+    }
+
+    console.log("✅ Updated Office Head profile:", result[0]);
+    res.json(result[0]);
+
   } catch (err) {
-    console.error("❌ Error updating office head profile:", err);
-    res.status(500).json({ message: "Failed to update profile." });
+    console.error("❌ Error updating Office Head profile:", err.message);
+    console.error("Full error object:", err);
+    res.status(500).json({
+      message: "Server error while updating profile",
+      error: err.message
+    });
   }
 };
+
 
 export const googleLogin = async (req, res) => {
   try {
