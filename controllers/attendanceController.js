@@ -161,20 +161,22 @@ export const getAttendanceLogs = async (req, res) => {
     // Fetch employees, attendance, and leave applications
     const result = await sql`
       SELECT el.id, el.id_number, el.first_name, el.last_name,
-             CONCAT(el.first_name, ' ', el.last_name) AS name,
-             al.attendance_date,
-             al.am_checkin, al.am_checkout,
-             al.pm_checkin, al.pm_checkout,
-             la.id AS leave_id,
-             la.leave_type
-      FROM employee_list el
-      LEFT JOIN attendance_logs al
-      ON el.id_number = al.pin AND al.attendance_date = ${formattedDate}
-      LEFT JOIN leave_applications la
-      ON el.user_id = la.user_id 
-         AND ${formattedDate}::date <@ la.inclusive_dates
-         AND la.status = 'Approved'
-      ORDER BY el.last_name ASC
+       CONCAT(el.first_name, ' ', el.last_name) AS name,
+       al.attendance_date,
+       al.am_checkin, al.am_checkout,
+       al.pm_checkin, al.pm_checkout,
+       MAX(la.leave_type) AS leave_type
+        FROM employee_list el
+        LEFT JOIN attendance_logs al
+          ON el.id_number = al.pin AND al.attendance_date = ${formattedDate}
+        LEFT JOIN leave_applications la
+          ON el.user_id = la.user_id 
+            AND ${formattedDate}::date <@ la.inclusive_dates
+            AND la.status = 'Approved'
+        GROUP BY el.id, el.id_number, el.first_name, el.last_name, 
+                al.attendance_date, al.am_checkin, al.am_checkout,
+                al.pm_checkin, al.pm_checkout
+        ORDER BY el.last_name ASC
     `;
 
     const logs = result.map(row => {
