@@ -16,6 +16,7 @@
   "type": "module",
   "description": "",
   "dependencies": {
+    "@sendgrid/mail": "^8.1.6",
     "@sparticuz/chromium": "^143.0.4",
     "@sparticuz/chromium-min": "^143.0.4",
     "bcrypt": "^6.0.0",

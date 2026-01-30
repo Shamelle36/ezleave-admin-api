@@ -1,6 +1,6 @@
 // controllers/loginCodeController.js
 import sql from "../config/db.js";
-
+import sgMail from '@sendgrid/mail';
 // Generate a random code
 const generateRandomCode = () => {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -24,15 +24,25 @@ export const generateLoginCode = async (req, res) => {
       });
     }
 
-    // Check if employee exists
-    const employeeExists = await sql`
-      SELECT id FROM employee_list WHERE id = ${employee_id}
+    // Check if employee exists and get email
+    const [employee] = await sql`
+      SELECT id, email, first_name, last_name, department, position 
+      FROM employee_list 
+      WHERE id = ${employee_id}
     `;
     
-    if (employeeExists.length === 0) {
+    if (!employee) {
       return res.status(404).json({
         success: false,
         error: "Employee not found"
+      });
+    }
+
+    // Check if employee has email
+    if (!employee.email) {
+      return res.status(400).json({
+        success: false,
+        error: "Employee does not have an email address"
       });
     }
 
@@ -76,10 +86,166 @@ export const generateLoginCode = async (req, res) => {
       RETURNING *;
     `;
 
+    // Send email using SendGrid
+    try {
+      // Set your SendGrid API key (should be in environment variables)
+      sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+      
+      const expirationTime = new Date(expires_at);
+      const formattedTime = expirationTime.toLocaleTimeString([], { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        timeZoneName: 'short'
+      });
+      
+      const msg = {
+        to: employee.email,
+        from: {
+          email: 'noreply@ezleave.com', // Your verified sender email
+          name: 'EZLeave System'
+        },
+        subject: `Your Login Code: ${code}`,
+        html: `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <style>
+              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+              .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+              .header { background-color: #4CAF50; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+              .content { background-color: #f9f9f9; padding: 30px; border-radius: 0 0 5px 5px; }
+              .code { 
+                font-size: 32px; 
+                font-weight: bold; 
+                letter-spacing: 5px; 
+                text-align: center; 
+                margin: 20px 0; 
+                padding: 15px;
+                background-color: #fff;
+                border: 2px dashed #4CAF50;
+                border-radius: 5px;
+                font-family: monospace;
+              }
+              .footer { 
+                margin-top: 30px; 
+                padding-top: 20px; 
+                border-top: 1px solid #ddd; 
+                font-size: 12px; 
+                color: #666; 
+                text-align: center;
+              }
+              .warning { 
+                background-color: #fff3cd; 
+                border: 1px solid #ffeaa7; 
+                padding: 10px; 
+                border-radius: 4px; 
+                margin: 15px 0;
+              }
+              .employee-info { 
+                background-color: #e9ecef; 
+                padding: 15px; 
+                border-radius: 4px; 
+                margin-bottom: 20px;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <h1>EZLeave Login Code</h1>
+              </div>
+              <div class="content">
+                <p>Hello ${employee.first_name} ${employee.last_name},</p>
+                
+                <div class="employee-info">
+                  <p><strong>Employee Details:</strong></p>
+                  <p><strong>Name:</strong> ${employee.first_name} ${employee.last_name}</p>
+                  <p><strong>Department:</strong> ${employee.department || 'Not specified'}</p>
+                  <p><strong>Position:</strong> ${employee.position || 'Not specified'}</p>
+                </div>
+                
+                <p>You have been issued a login code for the EZLeave system. Please use this code to log in:</p>
+                
+                <div class="code">${code}</div>
+                
+                <div class="warning">
+                  <p><strong>⚠️ Important:</strong> This code will expire at <strong>${formattedTime}</strong> (15 minutes from now).</p>
+                </div>
+                
+                <p><strong>Instructions:</strong></p>
+                <ol>
+                  <li>Go to the EZLeave login page</li>
+                  <li>Select "Login with Code" option</li>
+                  <li>Enter the code above</li>
+                  <li>Complete your login</li>
+                </ol>
+                
+                <p><strong>Security Notice:</strong></p>
+                <ul>
+                  <li>Do not share this code with anyone</li>
+                  <li>The code can only be used once</li>
+                  <li>If you did not request this code, please contact your administrator immediately</li>
+                </ul>
+                
+                <p>For security reasons, this code will automatically expire after use or after the expiration time.</p>
+                
+                <div class="footer">
+                  <p>This is an automated message from the EZLeave System.</p>
+                  <p>© ${new Date().getFullYear()} EZLeave. All rights reserved.</p>
+                </div>
+              </div>
+            </div>
+          </body>
+          </html>
+        `,
+        text: `
+EZLeave Login Code
+
+Hello ${employee.first_name} ${employee.last_name},
+
+You have been issued a login code for the EZLeave system.
+
+Your Login Code: ${code}
+
+Employee Details:
+- Name: ${employee.first_name} ${employee.last_name}
+- Department: ${employee.department || 'Not specified'}
+- Position: ${employee.position || 'Not specified'}
+
+⚠️ IMPORTANT: This code will expire at ${formattedTime} (15 minutes from now).
+
+Instructions:
+1. Go to the EZLeave login page
+2. Select "Login with Code" option
+3. Enter the code above
+4. Complete your login
+
+Security Notice:
+- Do not share this code with anyone
+- The code can only be used once
+- If you did not request this code, please contact your administrator immediately
+
+For security reasons, this code will automatically expire after use or after the expiration time.
+
+This is an automated message from the EZLeave System.
+© ${new Date().getFullYear()} EZLeave. All rights reserved.
+        `
+      };
+
+      await sgMail.send(msg);
+      console.log(`✅ Email sent to ${employee.email}`);
+      
+    } catch (emailError) {
+      console.error("❌ Error sending email:", emailError);
+      // Don't fail the request if email fails, just log it
+      // You might want to queue the email for retry
+    }
+
     res.status(201).json({
       success: true,
-      message: "Login code generated successfully",
-      data: newCode
+      message: "Login code generated and email sent successfully",
+      data: newCode,
+      email_sent: true
     });
 
   } catch (error) {
