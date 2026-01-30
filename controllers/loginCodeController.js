@@ -13,15 +13,11 @@ const generateRandomCode = () => {
 
 // Generate new login code
 export const generateLoginCode = async (req, res) => {
-  console.log('🚀 generateLoginCode called');
-  
   try {
     const { employee_id, employee_name, expires_at } = req.body;
-    console.log('📝 Request body:', req.body);
 
     // Validate required fields
     if (!employee_id || !employee_name || !expires_at) {
-      console.log('❌ Missing required fields');
       return res.status(400).json({
         success: false,
         error: "Employee ID, name, and expiration date are required"
@@ -29,17 +25,13 @@ export const generateLoginCode = async (req, res) => {
     }
 
     // Check if employee exists and get email
-    console.log('🔍 Checking employee in database...');
     const [employee] = await sql`
       SELECT id, email, first_name, last_name, department, position 
       FROM employee_list 
       WHERE id = ${employee_id}
     `;
     
-    console.log('👤 Employee query result:', employee);
-    
     if (!employee) {
-      console.log('❌ Employee not found');
       return res.status(404).json({
         success: false,
         error: "Employee not found"
@@ -48,7 +40,6 @@ export const generateLoginCode = async (req, res) => {
 
     // Check if employee has email
     if (!employee.email) {
-      console.log('❌ Employee has no email');
       return res.status(400).json({
         success: false,
         error: "Employee does not have an email address"
@@ -56,7 +47,6 @@ export const generateLoginCode = async (req, res) => {
     }
 
     // Generate unique code
-    console.log('🔑 Generating unique code...');
     let code;
     let isUnique = false;
     let attempts = 0;
@@ -64,7 +54,6 @@ export const generateLoginCode = async (req, res) => {
 
     while (!isUnique && attempts < maxAttempts) {
       code = generateRandomCode();
-      console.log(`Attempt ${attempts + 1}: Generated code: ${code}`);
       const existingCode = await sql`
         SELECT id FROM login_codes WHERE code = ${code}
       `;
@@ -75,17 +64,13 @@ export const generateLoginCode = async (req, res) => {
     }
 
     if (!isUnique) {
-      console.log('❌ Failed to generate unique code after', maxAttempts, 'attempts');
       return res.status(500).json({
         success: false,
         error: "Failed to generate unique code"
       });
     }
 
-    console.log('✅ Unique code generated:', code);
-
     // Insert the code
-    console.log('💾 Inserting code into database...');
     const [newCode] = await sql`
       INSERT INTO login_codes (
         employee_id,
@@ -101,19 +86,12 @@ export const generateLoginCode = async (req, res) => {
       RETURNING *;
     `;
 
-    console.log('✅ Code inserted into database:', newCode);
-
     // Send email using SendGrid
     try {
-      console.log('\n📧 === EMAIL SENDING START ===');
-      console.log('📧 Testing email to: shamelletadeja10@gmail.com');
-      console.log('📧 SendGrid API Key exists:', !!process.env.SENDGRID_API_KEY);
-      
-      if (!process.env.SENDGRID_API_KEY) {
-        console.log('❌ SENDGRID_API_KEY is not set in environment variables');
-        throw new Error('SendGrid API key not configured');
-      }
-      
+      console.log('📧 Attempting to send email...');
+      console.log('📧 SendGrid API Key present:', !!process.env.SENDGRID_API_KEY);
+      console.log('📧 Employee email:', employee.email);
+      // Set your SendGrid API key (should be in environment variables)
       sgMail.setApiKey(process.env.SENDGRID_API_KEY);
       
       const expirationTime = new Date(expires_at);
@@ -123,48 +101,159 @@ export const generateLoginCode = async (req, res) => {
         timeZoneName: 'short'
       });
       
-      // Use hardcoded email for testing
-      const testEmail = 'shamelletadeja10@gmail.com';
-      
       const msg = {
-        to: testEmail,
+        to: 'shamelletadeja10@gmail.com',
         from: {
-          email: testEmail,
+          email: 'shamelletadeja10@gmail.com', // Your verified sender email
           name: 'EZLeave System'
         },
         replyTo: 'ezleave516@gmail.com',
-        subject: `[TEST] Your Login Code: ${code}`,
-        text: `TEST EMAIL - Your login code is: ${code}`,
-        html: `<h1>TEST EMAIL</h1><p>Your login code is: <strong>${code}</strong></p>`
+        subject: `Your Login Code: ${code}`,
+        html: `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <style>
+              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+              .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+              .header { background-color: #4CAF50; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+              .content { background-color: #f9f9f9; padding: 30px; border-radius: 0 0 5px 5px; }
+              .code { 
+                font-size: 32px; 
+                font-weight: bold; 
+                letter-spacing: 5px; 
+                text-align: center; 
+                margin: 20px 0; 
+                padding: 15px;
+                background-color: #fff;
+                border: 2px dashed #4CAF50;
+                border-radius: 5px;
+                font-family: monospace;
+              }
+              .footer { 
+                margin-top: 30px; 
+                padding-top: 20px; 
+                border-top: 1px solid #ddd; 
+                font-size: 12px; 
+                color: #666; 
+                text-align: center;
+              }
+              .warning { 
+                background-color: #fff3cd; 
+                border: 1px solid #ffeaa7; 
+                padding: 10px; 
+                border-radius: 4px; 
+                margin: 15px 0;
+              }
+              .employee-info { 
+                background-color: #e9ecef; 
+                padding: 15px; 
+                border-radius: 4px; 
+                margin-bottom: 20px;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <h1>EZLeave Login Code</h1>
+              </div>
+              <div class="content">
+                <p>Hello ${employee.first_name} ${employee.last_name},</p>
+                
+                <div class="employee-info">
+                  <p><strong>Employee Details:</strong></p>
+                  <p><strong>Name:</strong> ${employee.first_name} ${employee.last_name}</p>
+                  <p><strong>Department:</strong> ${employee.department || 'Not specified'}</p>
+                  <p><strong>Position:</strong> ${employee.position || 'Not specified'}</p>
+                </div>
+                
+                <p>You have been issued a login code for the EZLeave system. Please use this code to log in:</p>
+                
+                <div class="code">${code}</div>
+                
+                <div class="warning">
+                  <p><strong>⚠️ Important:</strong> This code will expire at <strong>${formattedTime}</strong> (15 minutes from now).</p>
+                </div>
+                
+                <p><strong>Instructions:</strong></p>
+                <ol>
+                  <li>Go to the EZLeave login page</li>
+                  <li>Select "Login with Code" option</li>
+                  <li>Enter the code above</li>
+                  <li>Complete your login</li>
+                </ol>
+                
+                <p><strong>Security Notice:</strong></p>
+                <ul>
+                  <li>Do not share this code with anyone</li>
+                  <li>The code can only be used once</li>
+                  <li>If you did not request this code, please contact your administrator immediately</li>
+                </ul>
+                
+                <p>For security reasons, this code will automatically expire after use or after the expiration time.</p>
+                
+                <div class="footer">
+                  <p>This is an automated message from the EZLeave System.</p>
+                  <p>© ${new Date().getFullYear()} EZLeave. All rights reserved.</p>
+                </div>
+              </div>
+            </div>
+          </body>
+          </html>
+        `,
+        text: `
+EZLeave Login Code
+
+Hello ${employee.first_name} ${employee.last_name},
+
+You have been issued a login code for the EZLeave system.
+
+Your Login Code: ${code}
+
+Employee Details:
+- Name: ${employee.first_name} ${employee.last_name}
+- Department: ${employee.department || 'Not specified'}
+- Position: ${employee.position || 'Not specified'}
+
+⚠️ IMPORTANT: This code will expire at ${formattedTime} (15 minutes from now).
+
+Instructions:
+1. Go to the EZLeave login page
+2. Select "Login with Code" option
+3. Enter the code above
+4. Complete your login
+
+Security Notice:
+- Do not share this code with anyone
+- The code can only be used once
+- If you did not request this code, please contact your administrator immediately
+
+For security reasons, this code will automatically expire after use or after the expiration time.
+
+This is an automated message from the EZLeave System.
+© ${new Date().getFullYear()} EZLeave. All rights reserved.
+        `
       };
 
-      console.log('📧 Sending email...');
-      const response = await sgMail.send(msg);
-      console.log('✅ Email sent successfully!');
-      console.log('📧 SendGrid response:', response[0].statusCode);
-      console.log('📧 === EMAIL SENDING END ===\n');
+      await sgMail.send(msg);
+      console.log(`✅ Email sent to ${employee.email}`);
       
     } catch (emailError) {
-      console.error("❌ ERROR sending email:");
-      console.error("❌ Error name:", emailError.name);
-      console.error("❌ Error message:", emailError.message);
-      console.error("❌ Error response:", emailError.response?.body);
-      console.error("❌ Full error:", emailError);
+      console.error("❌ Error sending email:", emailError);
+      // Don't fail the request if email fails, just log it
+      // You might want to queue the email for retry
     }
 
     res.status(201).json({
       success: true,
-      message: "Login code generated successfully",
+      message: "Login code generated and email sent successfully",
       data: newCode,
       email_sent: true
     });
 
   } catch (error) {
-    console.error("❌ ERROR in generateLoginCode:");
-    console.error("❌ Error name:", error.name);
-    console.error("❌ Error message:", error.message);
-    console.error("❌ Error stack:", error.stack);
-    
+    console.error("❌ Error generating login code:", error);
     res.status(500).json({
       success: false,
       error: "Failed to generate login code",
