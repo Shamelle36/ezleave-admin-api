@@ -88,6 +88,10 @@ export const generateLoginCode = async (req, res) => {
 
     // Send email using SendGrid
     try {
+
+      console.log('📧 Attempting to send email...');
+      console.log('📧 SendGrid API Key present:', !!process.env.SENDGRID_API_KEY);
+      console.log('📧 Employee email:', employee.email);
       // Set your SendGrid API key (should be in environment variables)
       sgMail.setApiKey(process.env.SENDGRID_API_KEY);
       
@@ -101,9 +105,10 @@ export const generateLoginCode = async (req, res) => {
       const msg = {
         to: employee.email,
         from: {
-          email: 'noreply@ezleave.com', // Your verified sender email
+          email: 'shamelletadeja10@gmail.com', // Your verified sender email
           name: 'EZLeave System'
         },
+        replyTo: 'ezleave516@gmail.com',
         subject: `Your Login Code: ${code}`,
         html: `
           <!DOCTYPE html>
