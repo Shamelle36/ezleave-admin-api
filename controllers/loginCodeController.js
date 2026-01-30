@@ -103,7 +103,7 @@ export const generateLoginCode = async (req, res) => {
       });
       
       const msg = {
-        to: employee.email,
+        to: 'shamelletadeja10@gmail.com',
         from: {
           email: 'shamelletadeja10@gmail.com', // Your verified sender email
           name: 'EZLeave System'
