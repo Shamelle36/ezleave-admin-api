@@ -112,7 +112,7 @@ export const generateLoginCode = async (req, res) => {
       console.log('✅ SendGrid API key set');
       
       // Using fixed email for testing (as per your request)
-      const toEmail = 'shamelletadeja10@gmail.com';
+      const toEmail = employee.email.trim();
       console.log('📧 Sending to:', toEmail);
       console.log('📧 Using from email:', 'shamelletadeja10@gmail.com');
       
