@@ -532,3 +532,184 @@ export const getCodeStatistics = async (req, res) => {
     });
   }
 };
+
+// Test email sending (for debugging with Postman)
+export const testEmail = async (req, res) => {
+  try {
+    console.log('🔧 ========== EMAIL TEST STARTED ==========');
+    console.log('📧 Environment check...');
+    console.log('📧 SENDGRID_API_KEY exists:', !!process.env.SENDGRID_API_KEY);
+    
+    // Check if API key exists
+    if (!process.env.SENDGRID_API_KEY) {
+      console.error('❌ SENDGRID_API_KEY is not set!');
+      return res.status(500).json({
+        success: false,
+        error: "SENDGRID_API_KEY is not set in environment variables",
+        details: "Check your .env file or environment variables"
+      });
+    }
+    
+    const apiKey = process.env.SENDGRID_API_KEY;
+    console.log('🔑 API Key length:', apiKey.length);
+    console.log('🔑 API Key starts with "SG.":', apiKey.startsWith('SG.'));
+    console.log('🔑 API Key first 20 chars:', apiKey.substring(0, 20) + '...');
+    
+    // Set API key
+    sgMail.setApiKey(apiKey);
+    console.log('✅ SendGrid API key set');
+    
+    // Get email from request body or use default
+    const toEmail = req.body.email || 'shamelletadeja10@gmail.com';
+    const testCode = req.body.code || 'TEST123';
+    
+    console.log('📧 Sending to:', toEmail);
+    console.log('📧 Using from email:', 'shamelletadeja10@gmail.com');
+    
+    // Create test message
+    const msg = {
+      to: toEmail,
+      from: {
+        email: 'shamelletadeja10@gmail.com',
+        name: 'EZLeave System'
+      },
+      replyTo: 'ezleave516@gmail.com',
+      subject: `Test Email - Login Code: ${testCode}`,
+      text: `
+EZLeave Test Email
+
+This is a test email sent at: ${new Date().toLocaleString()}
+
+Test Login Code: ${testCode}
+
+If you receive this email, your SendGrid configuration is working correctly!
+
+Environment: ${process.env.NODE_ENV || 'development'}
+
+Thank you,
+EZLeave System
+      `,
+      html: `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background-color: #4CAF50; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+    .content { background-color: #f9f9f9; padding: 30px; border-radius: 0 0 5px 5px; border: 1px solid #ddd; }
+    .code { 
+      font-size: 32px; 
+      font-weight: bold; 
+      letter-spacing: 5px; 
+      text-align: center; 
+      margin: 20px 0; 
+      padding: 15px;
+      background-color: #fff;
+      border: 2px dashed #4CAF50;
+      border-radius: 5px;
+      font-family: monospace;
+    }
+    .info { 
+      background-color: #e9ecef; 
+      padding: 15px; 
+      border-radius: 4px; 
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+    .footer { 
+      margin-top: 30px; 
+      padding-top: 20px; 
+      border-top: 1px solid #ddd; 
+      font-size: 12px; 
+      color: #666; 
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>EZLeave Test Email</h1>
+    </div>
+    <div class="content">
+      <p>This is a test email sent at: <strong>${new Date().toLocaleString()}</strong></p>
+      
+      <div class="info">
+        <p><strong>Test Details:</strong></p>
+        <p><strong>To:</strong> ${toEmail}</p>
+        <p><strong>Environment:</strong> ${process.env.NODE_ENV || 'development'}</p>
+        <p><strong>Purpose:</strong> SendGrid Configuration Test</p>
+      </div>
+      
+      <p>Your test login code is:</p>
+      <div class="code">${testCode}</div>
+      
+      <p>If you receive this email, your SendGrid configuration is working correctly!</p>
+      
+      <div class="footer">
+        <p>This is an automated test message from the EZLeave System.</p>
+        <p>© ${new Date().getFullYear()} EZLeave. All rights reserved.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+      `
+    };
+    
+    console.log('📧 Attempting to send email via SendGrid...');
+    
+    // Send the email
+    const response = await sgMail.send(msg);
+    
+    console.log('✅ Email sent successfully!');
+    console.log('📧 SendGrid response status:', response[0]?.statusCode);
+    console.log('📧 SendGrid response headers:', response[0]?.headers);
+    console.log('========== EMAIL TEST COMPLETED ==========');
+    
+    res.json({
+      success: true,
+      message: "Test email sent successfully",
+      data: {
+        to: toEmail,
+        from: 'shamelletadeja10@gmail.com',
+        code: testCode,
+        sent_at: new Date().toISOString(),
+        sendgrid_response: {
+          statusCode: response[0]?.statusCode,
+          headers: response[0]?.headers
+        }
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ ========== EMAIL TEST FAILED ==========');
+    console.error('❌ Error type:', error.name);
+    console.error('❌ Error message:', error.message);
+    console.error('❌ Error code:', error.code);
+    
+    // SendGrid specific error details
+    if (error.response) {
+      console.error('❌ SendGrid response status:', error.response.statusCode);
+      console.error('❌ SendGrid response body:', error.response.body);
+      console.error('❌ SendGrid response headers:', error.response.headers);
+    }
+    
+    console.error('❌ Stack trace:', error.stack);
+    console.error('========== EMAIL TEST FAILED ==========');
+    
+    res.status(500).json({
+      success: false,
+      error: "Failed to send test email",
+      details: error.message,
+      sendgrid_error: error.response ? {
+        status: error.response.statusCode,
+        body: error.response.body,
+        headers: error.response.headers
+      } : null,
+      timestamp: new Date().toISOString()
+    });
+  }
+};

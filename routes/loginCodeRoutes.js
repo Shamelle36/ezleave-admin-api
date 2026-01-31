@@ -7,7 +7,8 @@ import {
   verifyLoginCode,
   revokeLoginCode,
   cleanupExpiredCodes,
-  getCodeStatistics
+  getCodeStatistics,
+  testEmail
 } from '../controllers/loginCodeController.js';
 
 const router = express.Router();
@@ -32,5 +33,7 @@ router.post('/cleanup', cleanupExpiredCodes);
 
 // Get statistics
 router.get('/statistics', getCodeStatistics);
+
+router.post('/test-email', testEmail);
 
 export default router;
