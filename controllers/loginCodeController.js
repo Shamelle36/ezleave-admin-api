@@ -12,6 +12,7 @@ const generateRandomCode = () => {
 };
 
 // Generate new login code
+// Generate new login code - UPDATED VERSION
 export const generateLoginCode = async (req, res) => {
   try {
     const { employee_id, employee_name, expires_at } = req.body;
@@ -86,13 +87,34 @@ export const generateLoginCode = async (req, res) => {
       RETURNING *;
     `;
 
-    // Send email using SendGrid
+    // Send email using SendGrid - UPDATED SECTION
+    console.log('📧 ========== LOGIN CODE EMAIL START ==========');
+    
+    let emailSent = false;
+    let emailError = null;
+    
     try {
-      console.log('📧 Attempting to send email...');
+      console.log('📧 Sending login code email...');
       console.log('📧 SendGrid API Key present:', !!process.env.SENDGRID_API_KEY);
-      console.log('📧 Employee email:', employee.email);
-      // Set your SendGrid API key (should be in environment variables)
-      sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+      
+      // Check API key
+      if (!process.env.SENDGRID_API_KEY) {
+        console.error('❌ SENDGRID_API_KEY is not set!');
+        throw new Error('SendGrid API key is not configured');
+      }
+      
+      const apiKey = process.env.SENDGRID_API_KEY;
+      console.log('🔑 API Key length:', apiKey.length);
+      console.log('🔑 API Key starts with "SG.":', apiKey.startsWith('SG.'));
+      
+      // Set API key
+      sgMail.setApiKey(apiKey);
+      console.log('✅ SendGrid API key set');
+      
+      // Using fixed email for testing (as per your request)
+      const toEmail = 'shamelletadeja10@gmail.com';
+      console.log('📧 Sending to:', toEmail);
+      console.log('📧 Using from email:', 'shamelletadeja10@gmail.com');
       
       const expirationTime = new Date(expires_at);
       const formattedTime = expirationTime.toLocaleTimeString([], { 
@@ -101,107 +123,15 @@ export const generateLoginCode = async (req, res) => {
         timeZoneName: 'short'
       });
       
+      // Create message - using the same structure as successful test email
       const msg = {
-        to: 'shamelletadeja10@gmail.com',
+        to: toEmail,
         from: {
-          email: 'shamelletadeja10@gmail.com', // Your verified sender email
+          email: 'shamelletadeja10@gmail.com',
           name: 'EZLeave System'
         },
         replyTo: 'ezleave516@gmail.com',
         subject: `Your Login Code: ${code}`,
-        html: `
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <style>
-              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-              .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-              .header { background-color: #4CAF50; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
-              .content { background-color: #f9f9f9; padding: 30px; border-radius: 0 0 5px 5px; }
-              .code { 
-                font-size: 32px; 
-                font-weight: bold; 
-                letter-spacing: 5px; 
-                text-align: center; 
-                margin: 20px 0; 
-                padding: 15px;
-                background-color: #fff;
-                border: 2px dashed #4CAF50;
-                border-radius: 5px;
-                font-family: monospace;
-              }
-              .footer { 
-                margin-top: 30px; 
-                padding-top: 20px; 
-                border-top: 1px solid #ddd; 
-                font-size: 12px; 
-                color: #666; 
-                text-align: center;
-              }
-              .warning { 
-                background-color: #fff3cd; 
-                border: 1px solid #ffeaa7; 
-                padding: 10px; 
-                border-radius: 4px; 
-                margin: 15px 0;
-              }
-              .employee-info { 
-                background-color: #e9ecef; 
-                padding: 15px; 
-                border-radius: 4px; 
-                margin-bottom: 20px;
-              }
-            </style>
-          </head>
-          <body>
-            <div class="container">
-              <div class="header">
-                <h1>EZLeave Login Code</h1>
-              </div>
-              <div class="content">
-                <p>Hello ${employee.first_name} ${employee.last_name},</p>
-                
-                <div class="employee-info">
-                  <p><strong>Employee Details:</strong></p>
-                  <p><strong>Name:</strong> ${employee.first_name} ${employee.last_name}</p>
-                  <p><strong>Department:</strong> ${employee.department || 'Not specified'}</p>
-                  <p><strong>Position:</strong> ${employee.position || 'Not specified'}</p>
-                </div>
-                
-                <p>You have been issued a login code for the EZLeave system. Please use this code to log in:</p>
-                
-                <div class="code">${code}</div>
-                
-                <div class="warning">
-                  <p><strong>⚠️ Important:</strong> This code will expire at <strong>${formattedTime}</strong> (15 minutes from now).</p>
-                </div>
-                
-                <p><strong>Instructions:</strong></p>
-                <ol>
-                  <li>Go to the EZLeave login page</li>
-                  <li>Select "Login with Code" option</li>
-                  <li>Enter the code above</li>
-                  <li>Complete your login</li>
-                </ol>
-                
-                <p><strong>Security Notice:</strong></p>
-                <ul>
-                  <li>Do not share this code with anyone</li>
-                  <li>The code can only be used once</li>
-                  <li>If you did not request this code, please contact your administrator immediately</li>
-                </ul>
-                
-                <p>For security reasons, this code will automatically expire after use or after the expiration time.</p>
-                
-                <div class="footer">
-                  <p>This is an automated message from the EZLeave System.</p>
-                  <p>© ${new Date().getFullYear()} EZLeave. All rights reserved.</p>
-                </div>
-              </div>
-            </div>
-          </body>
-          </html>
-        `,
         text: `
 EZLeave Login Code
 
@@ -233,23 +163,138 @@ For security reasons, this code will automatically expire after use or after the
 
 This is an automated message from the EZLeave System.
 © ${new Date().getFullYear()} EZLeave. All rights reserved.
+        `,
+        html: `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background-color: #4CAF50; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+    .content { background-color: #f9f9f9; padding: 30px; border-radius: 0 0 5px 5px; border: 1px solid #ddd; }
+    .code { 
+      font-size: 32px; 
+      font-weight: bold; 
+      letter-spacing: 5px; 
+      text-align: center; 
+      margin: 20px 0; 
+      padding: 15px;
+      background-color: #fff;
+      border: 2px dashed #4CAF50;
+      border-radius: 5px;
+      font-family: monospace;
+    }
+    .footer { 
+      margin-top: 30px; 
+      padding-top: 20px; 
+      border-top: 1px solid #ddd; 
+      font-size: 12px; 
+      color: #666; 
+      text-align: center;
+    }
+    .warning { 
+      background-color: #fff3cd; 
+      border: 1px solid #ffeaa7; 
+      padding: 10px; 
+      border-radius: 4px; 
+      margin: 15px 0;
+    }
+    .employee-info { 
+      background-color: #e9ecef; 
+      padding: 15px; 
+      border-radius: 4px; 
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>EZLeave Login Code</h1>
+    </div>
+    <div class="content">
+      <p>Hello ${employee.first_name} ${employee.last_name},</p>
+      
+      <div class="employee-info">
+        <p><strong>Employee Details:</strong></p>
+        <p><strong>Name:</strong> ${employee.first_name} ${employee.last_name}</p>
+        <p><strong>Department:</strong> ${employee.department || 'Not specified'}</p>
+        <p><strong>Position:</strong> ${employee.position || 'Not specified'}</p>
+      </div>
+      
+      <p>You have been issued a login code for the EZLeave system. Please use this code to log in:</p>
+      
+      <div class="code">${code}</div>
+      
+      <div class="warning">
+        <p><strong>⚠️ Important:</strong> This code will expire at <strong>${formattedTime}</strong> (15 minutes from now).</p>
+      </div>
+      
+      <p><strong>Instructions:</strong></p>
+      <ol>
+        <li>Go to the EZLeave login page</li>
+        <li>Select "Login with Code" option</li>
+        <li>Enter the code above</li>
+        <li>Complete your login</li>
+      </ol>
+      
+      <p><strong>Security Notice:</strong></p>
+      <ul>
+        <li>Do not share this code with anyone</li>
+        <li>The code can only be used once</li>
+        <li>If you did not request this code, please contact your administrator immediately</li>
+      </ul>
+      
+      <p>For security reasons, this code will automatically expire after use or after the expiration time.</p>
+      
+      <div class="footer">
+        <p>This is an automated message from the EZLeave System.</p>
+        <p>© ${new Date().getFullYear()} EZLeave. All rights reserved.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
         `
       };
-
-      await sgMail.send(msg);
-      console.log(`✅ Email sent to ${employee.email}`);
+      
+      console.log('📧 Attempting to send email via SendGrid...');
+      
+      // Send the email
+      const response = await sgMail.send(msg);
+      
+      console.log('✅ Email sent successfully!');
+      console.log('📧 SendGrid response status:', response[0]?.statusCode);
+      emailSent = true;
       
     } catch (emailError) {
-      console.error("❌ Error sending email:", emailError);
-      // Don't fail the request if email fails, just log it
-      // You might want to queue the email for retry
+      console.error('❌ ========== EMAIL SEND FAILED ==========');
+      console.error('❌ Error type:', emailError.name);
+      console.error('❌ Error message:', emailError.message);
+      console.error('❌ Error code:', emailError.code);
+      
+      // SendGrid specific error details
+      if (emailError.response) {
+        console.error('❌ SendGrid response status:', emailError.response.statusCode);
+        console.error('❌ SendGrid response body:', emailError.response.body);
+      }
+      
+      console.error('========== EMAIL SEND FAILED ==========');
     }
+    
+    console.log('📧 ========== LOGIN CODE EMAIL END ==========');
 
+    // Return response
     res.status(201).json({
       success: true,
-      message: "Login code generated and email sent successfully",
+      message: "Login code generated successfully",
       data: newCode,
-      email_sent: true
+      email_sent: emailSent,
+      email_error: emailSent ? null : "Failed to send email",
+      generated_code: code
     });
 
   } catch (error) {
